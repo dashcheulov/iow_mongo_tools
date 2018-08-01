@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.0.4 (2018-08-01)
+------------------
+
+- Enabled 'withPytest' in Jenkinsfile. #IOWOPS-13114
+- Removed alias 'test' from setup.py. #IOWOPS-13114
+
 0.0.3 (2018-08-01)
 ------------------
 

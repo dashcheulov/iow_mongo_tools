@@ -8,3 +8,5 @@
 .tox
 .pyc
 .pytest_cache
+
+iowmongotools/test/pytest_junit.xml
