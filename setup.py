@@ -2,12 +2,12 @@ from setuptools import setup, find_packages
 from os import path
 
 here = path.abspath(path.dirname(__file__))
-with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
+with open(path.join(here, 'README.rst')) as f:
     long_description = f.read()
 
 setup(
     name='iow-mongo-tools',
-    version='0.0.1',
+    version='0.0.2',
     description='Various tools for maintenance mongo cluster',
     long_description=long_description,
     url='https://confluence.iponweb.net/display/OPS/iow-mongo-tools',
@@ -25,9 +25,11 @@ setup(
     keywords='mongo iow',
     packages=find_packages(),
     install_requires=['pymongo>=3.7.1'],
+    setup_requires=["pytest-runner"],
+    tests_require=["pytest"],
     entry_points={
         'console_scripts': [
-            'dummy=iowmongotools:main',
+            'iowmongotools=iowmongotools:main',
         ],
     },
 )
