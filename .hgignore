@@ -1,0 +1,10 @@
+# JetBrains products
+.idea/
+.dependencies/
+.iml
+
+# Python
+.cache
+.tox
+.pyc
+.pytest_cache
