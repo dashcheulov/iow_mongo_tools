@@ -2,4 +2,4 @@ import iowmongotools
 
 
 def test_hello():
-    assert iowmongotools.hello() == 'Hello world'
+    assert iowmongotools.hello() == 'Hello world!'
