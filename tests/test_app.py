@@ -1,5 +1,5 @@
 from iowmongotools import app
-from functools import partial
+import pytest
 import os
 
 
@@ -91,4 +91,26 @@ def test_class_settingscli_with_arguments(monkeypatch):
                                               'with-an-option': False,
                                               'with_an_option': True}
 
-# TODO: add tests for App and AppCli
+
+def test_class_app_load_defaults_into_variable():
+    app_instance = app.App()
+    assert app_instance.default_config['log_level'][0] == app_instance.config.log_level
+    assert app_instance.default_config['logging'][0]['formatters'] == app_instance.config.logging['formatters']
+
+
+def test_class_appcli_cannot_inited_without_abstract_method():
+    with pytest.raises(TypeError) as excinfo:
+        app.AppCli()
+    assert 'abstract class AppCli with abstract methods' in str(excinfo.value)
+
+
+def test_class_appcli_init_logging(monkeypatch):
+    class AppCliWithRun(app.AppCli):
+        def run(self):
+            pass
+
+    monkeypatch.setattr('iowmongotools.app.SettingsCli.load.__defaults__', (('--log_level=warning',),))
+    appcli_instance = AppCliWithRun()
+    assert app.logging.root.level == 30  # matches to warning level
+    assert appcli_instance.config.logging['formatters']['console']['format'] == \
+           app.logging.root.handlers[0].formatter._fmt

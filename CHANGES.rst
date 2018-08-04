@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.0.8 (2018-08-04)
+------------------
+- covered module 'app' by tests. #IOWOPS-13114
+
 0.0.7 (2018-08-04)
 ------------------
 - moved tests to directory `/tests`. #IOWOPS-13114
