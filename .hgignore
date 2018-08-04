@@ -9,4 +9,4 @@
 .pyc
 .pytest_cache
 
-iowmongotools/pytest_junit.xml
+tests/pytest_junit.xml
