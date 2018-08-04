@@ -24,12 +24,12 @@ setup(
     ],
     keywords='mongo iow',
     packages=find_packages(),
-    install_requires=['pymongo>=3.7.1'],
+    install_requires=['pymongo>=3.7.1', 'pyaml'],
     setup_requires=["pytest-runner"],
     tests_require=["pytest"],
     entry_points={
         'console_scripts': [
-            'iowmongotools=iowmongotools:main',
+            'iowmongotools=iowmongotools:MongoCheckCli.entry',
         ],
     },
 )

@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.0.6 (2018-08-04)
+------------------
+- implemented module app that contains base class for scripts, loads settings and configures logging, includes CLI. #IOWOPS-13114
+- moved up tests from test dir. #IOWOPS-13114
+
 0.0.5 (2018-08-01)
 ------------------
 - fixed test intendently broken in 0.0.2. #IOWOPS-13114
