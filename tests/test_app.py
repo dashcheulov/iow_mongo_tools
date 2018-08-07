@@ -56,14 +56,17 @@ def test_class_settingscli_without_arguments(monkeypatch, tmpdir):
 def test_class_settingscli_with_arguments(tmpdir, monkeypatch):
     config = tmpdir.join('tmp_config.yaml')
     config.write('''
-        property1: sample
-        with-an-option: false
-        option: true
-        someparam: to_be_erased
+    property1: sample
+    with-an-option: false
+    option: true
+    someparam: to_be_erased
+    list: [vef, efv]
     ''')
-    defaults = {'config_file': (config.realpath(),), 'property1': ('to_be_erased', 'description'), 'log_level': 'debug'}
+    defaults = {'config_file': (config.realpath(),), 'property1': ('to_be_erased', 'description'), 'list': ([], 'd'),
+                'with-an-option': (None, 'desc'), 'option': (None, 'desc'), 'someparam': (None, 'desc'),
+                }
     monkeypatch.setattr('iowmongotools.app.SettingsCli.load.__defaults__', ([
-                                                                                '--log_level=debug',
+                                                                                '--list', 'one', 'two',
                                                                                 '--with-an-option',
                                                                                 '--no-option',
                                                                                 '--someparam=val'
@@ -71,20 +74,25 @@ def test_class_settingscli_with_arguments(tmpdir, monkeypatch):
     settings_instance = app.SettingsCli(defaults)
     assert settings_instance.__dict__ == {'config_file': config.realpath(),
                                           'property1': 'sample',
-                                          'log_level': 'debug',
                                           'option': False,
                                           'someparam': 'val',
                                           'with-an-option': False,
-                                          'with_an_option': True}
+                                          'with_an_option': True,
+                                          'list': ['one', 'two']}
 
 
-def test_class_app_load_defaults_into_variable(tmpdir, monkeypatch):
+def test_class_app_load_defaults_into_variable(tmpdir):
     config = tmpdir.join('tmp_config.yaml')
     config.write('''
     property: sample
     ''')
-    monkeypatch.setattr('iowmongotools.app.App.default_config', {'config_file': (config.realpath(), )})
-    app_instance = app.App()
+
+    class AppWithDefaults(app.App):
+        @property
+        def default_config(self):
+            return {'config_file': (config.realpath(),)}
+
+    app_instance = AppWithDefaults()
     assert app_instance.default_config['config_file'][0] == app_instance.config.config_file
     assert app_instance.config.property == 'sample'
 

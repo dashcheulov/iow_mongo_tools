@@ -17,12 +17,12 @@ class Settings(object):
     def __init__(self, defaults=None):
         if isinstance(defaults, dict):
             logger.debug('Loading %s default settings', len(defaults))
+            self.description = {}
             self._load_defaults(defaults)
         self.load()
         delattr(self, 'description')
 
     def _load_defaults(self, defaults):
-        self.description = {}
         for key, content in defaults.items():  # content is tuple of value and description
             self.__dict__.update({key: content[0]})
             self.description.update({key: content[1] if len(content) == 2 else None})
@@ -39,6 +39,7 @@ class Settings(object):
                 if content:
                     self.__dict__.update(content)
             else:
+                logger.warning('Cannot find config file %s', self.config_file)
                 delattr(self, 'config_file')
 
     def __str__(self):
@@ -53,16 +54,23 @@ class SettingsCli(Settings):
         It means that defaults may be overwritten by config, which may be overwritten by cmd-args.
         """
         parser = ArgumentParser()
-        parser.add_argument("--{}".format('config_file'), default=getattr(self, 'config_file', 0),
-                            help='Path to yaml file containing settings')
-        parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
-        self.load_config_file()
+        if hasattr(self, 'config_file'):
+            parser.add_argument("--{}".format('config_file'), default=getattr(self, 'config_file'),
+                                help='Path to yaml file containing settings')
+            parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
+            self.load_config_file()
+        print(self.__dict__)
         for key, value in self.__dict__.items():
+            if not self.description.get(key):
+                continue
             if value is True:
                 parser.add_argument("--no-{}".format(key), dest=key, action='store_false', default=value,
                                     help=self.description.get(key))
             elif value is False:
-                parser.add_argument("--{}".format(key), action='store_true', default=value)
+                parser.add_argument("--{}".format(key), action='store_true', default=value,
+                                    help=self.description.get(key))
+            elif isinstance(value, (list, tuple, set, frozenset)):
+                parser.add_argument("--{}".format(key), default=value, nargs='*', help=self.description.get(key))
             elif key not in ('config_file', 'description'):
                 parser.add_argument("--{}".format(key), default=value, help=self.description.get(key))
         parser.parse_args(argv, self)
@@ -73,16 +81,6 @@ class App(ABC):
 
     def __init__(self):
         self.config = self.SettingsClass(self.default_config)
-
-    @property
-    def default_config(self):
-        """ :returns Dict with default settings and its descriptions """
-        return {
-            'config_file': (
-                'config.yaml',
-                'Path to yaml file containing settings'
-            )
-        }
 
 
 class AppCli(App):
@@ -97,13 +95,13 @@ class AppCli(App):
 
     @property
     def default_config(self):
-        config = super().default_config
-        config.update({
+        """ :returns Dict with default settings and its descriptions """
+        return {
             'log_level': (
-                'info',
-                'Override of level of root logger. E.g. \'info\' or \'debug\'.'
+                'debug',
+                'Level of root logger. E.g. \'info\' or \'debug\'.'
             ),
-            'logging': (
+            'logging': (  # Dict passed to logging.config.dictConfig as is. Totally configures logging.
                 yaml.safe_load('''
                 version: 1
                 disable_existing_loggers: False
@@ -119,11 +117,8 @@ class AppCli(App):
                 root:
                     handlers: [console]
                     level: INFO
-            '''),
-                'Dict passed to logging.config.dictConfig as is. Totally configures logging.'
-            )
-        })
-        return config
+            '''),)
+        }
 
     @classmethod
     def entry(cls):

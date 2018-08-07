@@ -1,6 +1,14 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.0 (2018-08-08)
+------------------
+- added iowmongotools.upload. #IOWOPS-13114
+- don't parse arguments without description. #IOWOPS-13114
+- handle list by arguments parser. #IOWOPS-13114
+- removed `config_file` from defaults of App. #IOWOPS-13114
+- log warning if `config_file` absents. #IOWOPS-13114
+
 0.0.9 (2018-08-07)
 ------------------
 - used fixture 'tmpdir' in tests. #IOWOPS-13114
