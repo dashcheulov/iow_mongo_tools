@@ -78,13 +78,30 @@ class App(ABC):
     def default_config(self):
         """ :returns Dict with default settings and its descriptions """
         return {
-            'log_level': (
-                'info',
-                'Override of level of root logger. E.g. \'info\' or \'debug\'.'
-            ),
             'config_file': (
                 'config.yaml',
                 'Path to yaml file containing settings'
+            )
+        }
+
+
+class AppCli(App):
+    SettingsClass = SettingsCli
+
+    def __init__(self):
+        super().__init__()
+        self.name = os.path.basename(sys.argv[0])  # name of script
+        self.config.logging['root']['level'] = self.config.log_level.upper()
+        logging.config.dictConfig(self.config.logging)
+        logger.debug('%s loaded config:\n%s', self.name, self.config)
+
+    @property
+    def default_config(self):
+        config = super().default_config
+        config.update({
+            'log_level': (
+                'info',
+                'Override of level of root logger. E.g. \'info\' or \'debug\'.'
             ),
             'logging': (
                 yaml.safe_load('''
@@ -105,18 +122,8 @@ class App(ABC):
             '''),
                 'Dict passed to logging.config.dictConfig as is. Totally configures logging.'
             )
-        }
-
-
-class AppCli(App):
-    SettingsClass = SettingsCli
-
-    def __init__(self):
-        super().__init__()
-        self.name = os.path.basename(sys.argv[0])  # name of script
-        self.config.logging['root']['level'] = self.config.log_level.upper()
-        logging.config.dictConfig(self.config.logging)
-        logger.debug('%s loaded config:\n%s', self.name, self.config)
+        })
+        return config
 
     @classmethod
     def entry(cls):

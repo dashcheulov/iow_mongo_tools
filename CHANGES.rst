@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.0.9 (2018-08-07)
+------------------
+- used fixture 'tmpdir' in tests. #IOWOPS-13114
+- moved 'logging' default settings from App to AppCli. #IOWOPS-13114
+
 0.0.8 (2018-08-04)
 ------------------
 - covered module 'app' by tests. #IOWOPS-13114
