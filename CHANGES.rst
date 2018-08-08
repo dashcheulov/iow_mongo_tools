@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.1 (2018-08-08)
+------------------
+- added stdeb.cfg. #IOWOPS-13114
+
 0.1.0 (2018-08-08)
 ------------------
 - added iowmongotools.upload. #IOWOPS-13114
