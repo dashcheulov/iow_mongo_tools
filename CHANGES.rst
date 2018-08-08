@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.5 (2018-08-08)
+------------------
+- added abstractmethod to Uploader, filled in description of its defaults. #IOWOPS-13114
+
 0.1.3 (2018-08-08)
 ------------------
 - fixed dependencies in stdeb.cfg. #IOWOPS-13114

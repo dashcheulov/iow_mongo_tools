@@ -9,6 +9,7 @@ import gzip
 import shutil
 import threading
 import yaml
+from abc import abstractmethod
 from iowmongotools import app
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -205,25 +206,25 @@ class TmpSegmentFile(object):  # pylint: disable=too-few-public-methods
 
 
 class Uploader(app.App):
+    def __init__(self, processor):
+        super().__init__()
+        DB.path = self.config.db_path
+        DB.load()
 
     @property
     def default_config(self):
         config = super().default_config
         config.update({
-            'clusters': (('or', 'sc', 'eu', 'jp'), 'Set of a designation of clusters'),
-            'upload_dir': ('upload',),
-            'inprog_dir': ('inprog_dir',),
+            'clusters': (('or', 'sc', 'eu', 'jp'), 'Set of a designation of clusters.'),
+            'upload_dir': ('upload', 'Directory with incomings files'),
+            'inprog_dir': ('inprog_dir', 'Temporary directory with files being processed.'),
             'invalid_dir': ('invalid_dir',),
-            'db_path': ('db.yaml',),
-            'reprocess_invalid': (False,),
-            'processor_config': (dict()),
+            'db_path': ('db.yaml', 'Path to file containing state of uploading.'),
+            'reprocess_invalid': (False, 'Whether reprocess files were not uploaded previously'),
         })
         return config
 
     def run(self):
-        DB.path = self.config.db_path
-        DB.load()
-
         files = [SegmentFile(filename, self.config, self.processor) for filename in
                  glob.glob(os.path.join(self.config.upload_dir, '*')) if
                  os.path.isfile(filename)]
@@ -245,3 +246,7 @@ class Uploader(app.App):
                     thread.join()
             err_count += segfile.err_count
         return err_count
+
+    @abstractmethod
+    def processor(self, filename, cluster, config):
+        raise NotImplementedError('You should implement this')
