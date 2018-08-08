@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.7 (2018-08-08)
+------------------
+- add argument config_file even if it's not in defaults. #RT:515625
+
 0.1.6 (2018-08-08)
 ------------------
 - removed surplus argument from Uploader. #RT:515625

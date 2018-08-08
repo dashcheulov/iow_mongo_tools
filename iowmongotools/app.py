@@ -54,12 +54,13 @@ class SettingsCli(Settings):
         It means that defaults may be overwritten by config, which may be overwritten by cmd-args.
         """
         parser = ArgumentParser()
-        if hasattr(self, 'config_file'):
-            parser.add_argument("--{}".format('config_file'), default=getattr(self, 'config_file'),
-                                help='Path to yaml file containing settings')
-            parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
+        parser.add_argument("--{}".format('config_file'), default=getattr(self, 'config_file') if hasattr(self, 'config_file') else None,
+                            help='Path to yaml file containing settings')
+        parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
+        if self.config_file:
             self.load_config_file()
-        print(self.__dict__)
+        else:
+            delattr(self, 'config_file')
         for key, value in self.__dict__.items():
             if not self.description.get(key):
                 continue
