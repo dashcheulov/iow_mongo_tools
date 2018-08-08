@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.3 (2018-08-08)
+------------------
+- fixed dependencies in stdeb.cfg. #IOWOPS-13114
+
 0.1.2 (2018-08-08)
 ------------------
 - added dependencies to stdeb.cfg. #IOWOPS-13114
