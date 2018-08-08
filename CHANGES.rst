@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.6 (2018-08-08)
+------------------
+- removed surplus argument from Uploader. #RT:515625
+- set obs project in Jenkinsfile. #RT:515625
+
 0.1.5 (2018-08-08)
 ------------------
 - added abstractmethod to Uploader, filled in description of its defaults. #IOWOPS-13114

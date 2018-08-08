@@ -206,7 +206,7 @@ class TmpSegmentFile(object):  # pylint: disable=too-few-public-methods
 
 
 class Uploader(app.App):
-    def __init__(self, processor):
+    def __init__(self):
         super().__init__()
         DB.path = self.config.db_path
         DB.load()
