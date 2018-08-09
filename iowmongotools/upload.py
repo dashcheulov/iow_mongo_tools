@@ -126,8 +126,9 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                 return self.db.get(self.name) if self.db.get(self.name) else self.init
 
             def __set__(self, obj, val):
-                self.db.update({self.name: val})
-                self.db.flush()
+                if val != self.db.get(self.name):
+                    self.db.update({self.name: val})
+                    self.db.flush()
 
         class Flags(object):  # pylint: disable=too-few-public-methods,no-init
             """ Set of flags (properties in db) """

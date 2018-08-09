@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.8 (2018-08-09)
+------------------
+- changed default log level to info. #IOWOPS-13114
+- don't save value to DB if it's already there. #IOWOPS-13114
+
 0.1.7 (2018-08-08)
 ------------------
 - add argument config_file even if it's not in defaults. #RT:515625

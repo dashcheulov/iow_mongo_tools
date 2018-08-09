@@ -99,7 +99,7 @@ class AppCli(App):
         """ :returns Dict with default settings and its descriptions """
         return {
             'log_level': (
-                'debug',
+                'info',
                 'Level of root logger. E.g. \'info\' or \'debug\'.'
             ),
             'logging': (  # Dict passed to logging.config.dictConfig as is. Totally configures logging.
