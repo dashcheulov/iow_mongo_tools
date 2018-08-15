@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.1.9 (2018-08-15)
+------------------
+- improvements of classes DB and Flag. #IOWOPS-13114
+- added test upload.test_segmentfile_flags_set_get. #IOWOPS-13114
+
 0.1.8 (2018-08-09)
 ------------------
 - changed default log level to info. #IOWOPS-13114

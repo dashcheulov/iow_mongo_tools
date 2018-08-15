@@ -9,6 +9,7 @@ import gzip
 import shutil
 import threading
 import yaml
+from copy import copy
 from abc import abstractmethod
 from iowmongotools import app
 
@@ -47,42 +48,46 @@ class DB(object):
     """ Operates with persistent storage of metadata """
     path = None
     __data = {}
+    _flushed = True
 
     @classmethod
-    def load(cls):
-        """ Reads db from file and load to property __data """
+    def load(cls, path=None):
+        """ Reads db from file and updates to property __data """
         if not cls.path:
-            raise NameError('Please define DB.path')
+            if not path:
+                raise NameError('Please define DB.path')
+            cls.path = path
         logger.debug('Reading metadata from %s', cls.path)
         if not os.path.isfile(cls.path):
             cls.__data = {}
             return
         with open(cls.path, 'r') as db_file:
-            cls.__data = yaml.safe_load(db_file) or {}
+            cls.__data.update(yaml.safe_load(db_file) or {})
 
     @classmethod
     def flush(cls):
-        """ Writes content of property __data to file """
-        logger.debug('Writting metadata to %s', cls.path)
-        with open(cls.path, 'w') as outfile:
-            yaml.safe_dump(cls.__data, outfile, default_flow_style=False)
+        """ Writes content of property __data to file only if __data is modified """
+        if not cls._flushed:
+            logger.debug('Writting metadata to %s', cls.path)
+            with open(cls.path, 'w') as outfile:
+                yaml.safe_dump(cls.__data, outfile, default_flow_style=False)
+            cls._flushed = True
 
     def __init__(self, name, initial=None):
         self.name = name
-        self._data = self.__data.get(name)
-        if not self._data:
-            self._data = self.__data[name] = initial if initial else {}
+        if initial and not isinstance(initial, dict):
+            logger.warning('Wrong value %s. Ignoring.', initial)
+        if name not in self.__data:
+            self.__data.update({name: initial or {}})
 
-    def update(self, val):
-        """ Update value of obj prop _data. Can be only dictionary  """
-        if isinstance(val, dict):
-            self._data.update(val)
-        else:
-            logger.error('Failed to update db with %s', val)
+    def update(self, item, val):
+        """ Update value of item. """
+        self.__data[self.name].update({item: val})
+        DB._flushed = False
 
     def get(self, item):
         """ :return item from dict _data """
-        return self._data.get(item)
+        return self.__data[self.name].get(item)
 
 
 class SegmentFile(object):  # pylint: disable=too-few-public-methods
@@ -115,23 +120,24 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         """
 
         class Flag(object):  # pylint: disable=too-few-public-methods
-            """ Maps property to db """
-            db = object
-
-            def __init__(self, name, init=None):
-                self.name = name
-                self.init = init
+            """ Descriptor of flag """
+            def __init__(self, name_in_db, init_value=None):
+                self.name = name_in_db
+                self.init_value = init_value
+                self._val = None  # copy of value. For comparing we need to store previous value
 
             def __get__(self, obj, objtype):
-                return self.db.get(self.name) if self.db.get(self.name) else self.init
+                return obj.db.get(self.name) or self.init_value
 
             def __set__(self, obj, val):
-                if val != self.db.get(self.name):
-                    self.db.update({self.name: val})
-                    self.db.flush()
+                obj.db.update(self.name, val)
+                if val != self._val:
+                    obj.db.flush()
+                    self._val = copy(val)
 
         class Flags(object):  # pylint: disable=too-few-public-methods,no-init
             """ Set of flags (properties in db) """
+            db = object
             invalid = Flag('invalid', set())  # set of clusters, in which uploading failed
             processed = Flag('processed', set())  # set of clusters, in which uploading succeed
 
@@ -139,7 +145,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         self.config = config
         self.processor = processor
         self.name = os.path.basename(self.path).split('.')[0]
-        Flag.db = DB(self.name)
+        Flags.db = DB(self.name)
         self.flags = Flags()
         self.tmp_file = self.path
         self.err_count = 0
@@ -209,8 +215,7 @@ class TmpSegmentFile(object):  # pylint: disable=too-few-public-methods
 class Uploader(app.App):
     def __init__(self):
         super().__init__()
-        DB.path = self.config.db_path
-        DB.load()
+        DB.load(self.config.db_path)
 
     @property
     def default_config(self):
