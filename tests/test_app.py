@@ -24,6 +24,13 @@ def test_class_settings_with_nonexistent_config_file():
     assert hasattr(settings_instance, 'config_file') is False
 
 
+def test_class_settings_with_nonexistent_cluster_config_file():
+    defaults = {'cluster_config': ('/some/nonexistent/path/to/config.yaml',), 'property': ('sample', 'description')}
+    settings_instance = app.Settings(defaults)
+    assert settings_instance.property == 'sample'
+    assert settings_instance.cluster_config == '/some/nonexistent/path/to/config.yaml'
+
+
 def test_class_settings_with_config_file(tmpdir):
     config = tmpdir.join('tmp_config.yaml')
     config.write('''
@@ -40,6 +47,41 @@ def test_class_settings_with_config_file(tmpdir):
         'config_file': config.realpath(), 'property1': 'override', 'property2': None, 'property3': 4.1,
         'property4': {'sample', 'set'}
     }
+
+
+def test_class_settings_load_cluster_config(tmpdir):
+    config = tmpdir.join('tmp_cluster_config.yaml')
+    config.write('''
+    local:
+      mongos:
+      - 'localhost:27017'
+    ''')
+    defaults = {'cluster_config': (config.realpath(),), 'property1': ('sample', 'description')}
+    settings_instance = app.Settings(defaults)
+    assert settings_instance.property1 == 'sample'
+    assert settings_instance.cluster_config == {'local': {'mongos': ['localhost:27017']}}
+
+
+def test_class_settings_load_cluster_config_through_config(tmpdir):
+    cluster_config = tmpdir.join('tmp_cluster_config.yaml')
+    cluster_config.write('''
+    local:
+      mongos:
+      - 'localhost:27019'
+    ''')
+    config = tmpdir.join('tmp_config.yaml')
+    config.write('cluster_config: %s' % cluster_config.realpath())
+    defaults = {'config_file': (config.realpath(),), 'property': ('sample', 'description')}
+    settings_instance = app.Settings(defaults)
+    assert settings_instance.property == 'sample'
+    assert settings_instance.cluster_config == {'local': {'mongos': ['localhost:27019']}}
+
+
+def test_class_settingscli_without_config(monkeypatch):
+    defaults = {'property2': ('sample2', 'description2')}
+    monkeypatch.setattr('iowmongotools.app.SettingsCli.load.__defaults__', (list(),))
+    settings_instance = app.SettingsCli(defaults)
+    assert settings_instance.__dict__ == {'property2': 'sample2'}
 
 
 def test_class_settingscli_without_arguments(monkeypatch, tmpdir):
@@ -79,6 +121,27 @@ def test_class_settingscli_with_arguments(tmpdir, monkeypatch):
                                           'with-an-option': False,
                                           'with_an_option': True,
                                           'list': ['one', 'two']}
+
+
+def test_class_settingscli_load_cluster_config_through_argument(monkeypatch, tmpdir):
+    cluster_config = tmpdir.join('tmp_cluster_config.yaml')
+    cluster_config.write('''
+    aws-va:
+      mongos:
+      - 'mongos1:27017'
+    gce-eu:
+      mongos:
+      - 'mongos2:27017'
+    ''')
+    defaults = {'property': ('sample', 'description')}
+    monkeypatch.setattr('iowmongotools.app.SettingsCli.load.__defaults__', ([
+                                                                                '--cluster_config',
+                                                                                str(cluster_config.realpath())
+                                                                            ],))
+    settings_instance = app.SettingsCli(defaults)
+    assert settings_instance.property == 'sample'
+    assert settings_instance.cluster_config['aws-va'] == {'mongos': ['mongos1:27017']}
+    assert settings_instance.clusters == ['aws-va', 'gce-eu']
 
 
 def test_class_app_load_defaults_into_variable(tmpdir):

@@ -1,6 +1,13 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.2.0 (2018-09-23)
+------------------
+- added entity config_cluster to Settings and SettingsCli. #IOWOPS-13114
+- changed Settings.load_config() #IOWOPS-13114
+- got parsed arguments with ArgumentDefaultsHelpFormatter. #IOWOPS-13114
+- added singleton Cluster with tests. #IOWOPS-13114
+
 0.1.9 (2018-08-15)
 ------------------
 - improvements of classes DB and Flag. #IOWOPS-13114

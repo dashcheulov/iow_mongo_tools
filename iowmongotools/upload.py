@@ -136,7 +136,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                     self._val = copy(val)
 
         class Flags(object):  # pylint: disable=too-few-public-methods,no-init
-            """ Set of flags (properties in db) """
+            """ Container for flags (properties in db) """
             db = object
             invalid = Flag('invalid', set())  # set of clusters, in which uploading failed
             processed = Flag('processed', set())  # set of clusters, in which uploading succeed
@@ -222,7 +222,7 @@ class Uploader(app.App):
         config = super().default_config
         config.update({
             'clusters': (('or', 'sc', 'eu', 'jp'), 'Set of a designation of clusters.'),
-            'upload_dir': ('upload', 'Directory with incomings files'),
+            'upload_dir': ('upload', 'Directory with incoming files'),
             'inprog_dir': ('inprog_dir', 'Temporary directory with files being processed.'),
             'invalid_dir': ('invalid_dir',),
             'db_path': ('db.yaml', 'Path to file containing state of uploading.'),

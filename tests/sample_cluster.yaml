@@ -1,0 +1,58 @@
+---
+'gce-eu':
+  mongos:
+  - "_id": "mongo-gce-or-1.project.iponweb.net:27017"
+    "mongoVersion": "2.4.10"
+    "ping": ISODate("2018-08-04T13:34:52.291Z")
+    "up": 40141356
+    "waiting": true
+  - "_id": "mongo-gce-or-2.project.iponweb.net:27017"
+    "mongoVersion": "2.4.10"
+    "ping": ISODate("2018-08-04T13:34:52.254Z")
+    "up": 37082500
+    "waiting": true
+  - "_id": "mongo-gce-or-3.project.iponweb.net:27017"
+    "mongoVersion": "2.4.10"
+    "ping": ISODate("2018-08-04T13:34:48.727Z")
+    "up": 40141268
+    "waiting": true
+  shards:
+  - "_id": "mongo-gce-or-1"
+    "host": "mongo-gce-or-1.project.iponweb.net:27019"
+  - "_id": "mongo-gce-or-2"
+    "host": "mongo-gce-or-2.project.iponweb.net:27019"
+  - "_id": "mongo-gce-or-3"
+    "host": "mongo-gce-or-3.project.iponweb.net:27019"
+  databases:
+  - "_id": "admin"
+    "partitioned": false
+    "primary": "config"
+  - "_id": "db"
+    "partitioned": false
+    "primary": "mongo-gce-or-2"
+  - "_id": "test"
+    "partitioned": false
+    "primary": "mongo-gce-or-3"
+  - "_id": "project"
+    "partitioned": true
+    "primary": "mongo-gce-or-1"
+  collections:
+  - "_id": "project.cookies"
+    "lastmod": ISODate("1970-01-18T06:47:30.619Z")
+    "dropped": false
+    "key": { "_id": "hashed" }
+    "unique": false
+    "lastmodEpoch": ObjectId("5901323b70884912621e5b7b")
+  - "_id": "project.sid_history"
+    "lastmod": ISODate("1970-01-18T06:47:30.644Z")
+    "dropped": true
+    "key": { "_id": "hashed" }
+    "unique": false
+    "lastmodEpoch": ObjectId("5901325470884912621e5b80")
+  - "_id": "project.uuidh"
+    "lastmod": ISODate("1970-01-18T06:47:30.662Z")
+    "dropped": false
+    "key": { "_id": "hashed" }
+    "unique": false
+    "lastmodEpoch": ObjectId("5901326670884912621e5b82")
+...

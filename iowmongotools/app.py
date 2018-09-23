@@ -4,7 +4,7 @@ import os
 import logging
 import logging.config
 from abc import ABC, abstractmethod
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import yaml
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
@@ -28,19 +28,25 @@ class Settings(object):
             self.description.update({key: content[1] if len(content) == 2 else None})
 
     def load(self):
-        self.load_config_file()
-
-    def load_config_file(self):
         if hasattr(self, 'config_file'):
-            if os.path.isfile(self.config_file):
-                logger.info('Reading config file %s', self.config_file)
-                with open(self.config_file, 'r') as config_file:
-                    content = yaml.safe_load(config_file)
-                if content:
-                    self.__dict__.update(content)
+            config = self.read_config_file(self.config_file)
+            if config:
+                self.__dict__.update(config)
             else:
-                logger.warning('Cannot find config file %s', self.config_file)
                 delattr(self, 'config_file')
+        if hasattr(self, 'cluster_config'):
+            self.cluster_config = self.read_config_file(self.cluster_config) or self.cluster_config
+
+    @staticmethod
+    def read_config_file(filepath):
+        if filepath:
+            if os.path.isfile(filepath):
+                logger.info('Reading config file %s', filepath)
+                with open(filepath, 'r') as config_file:
+                    content = yaml.safe_load(config_file)
+                return content
+            else:
+                logger.warning('Cannot find config file %s', filepath)
 
     def __str__(self):
         return '---\n{}...'.format(yaml.safe_dump(self.__dict__, default_flow_style=False))
@@ -53,14 +59,20 @@ class SettingsCli(Settings):
         Settings are defined in the next order: defaults, config file, cmd-arguments.
         It means that defaults may be overwritten by config, which may be overwritten by cmd-args.
         """
-        parser = ArgumentParser()
-        parser.add_argument("--{}".format('config_file'), default=getattr(self, 'config_file') if hasattr(self, 'config_file') else None,
+        parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+        parser.add_argument("--{}".format('config_file'), default=getattr(self, 'config_file', None),
                             help='Path to yaml file containing settings')
         parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
-        if self.config_file:
-            self.load_config_file()
-        else:
-            delattr(self, 'config_file')
+        config = self.read_config_file(self.config_file)
+        if config:
+            self.__dict__.update(config)
+        parser.add_argument("--{}".format('cluster_config'), default=getattr(self, 'cluster_config', None),
+                            help='Path to yaml file containing description of clusters')
+        parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
+        cluster_config = self.read_config_file(self.cluster_config)
+        if cluster_config:
+            parser.add_argument("--{}".format('clusters'), default=[c for c in cluster_config.keys()],
+                                help='Cluster names to be processed', nargs='*')
         for key, value in self.__dict__.items():
             if not self.description.get(key):
                 continue
@@ -72,9 +84,14 @@ class SettingsCli(Settings):
                                     help=self.description.get(key))
             elif isinstance(value, (list, tuple, set, frozenset)):
                 parser.add_argument("--{}".format(key), default=value, nargs='*', help=self.description.get(key))
-            elif key not in ('config_file', 'description'):
+            elif key not in ('config_file', 'description', 'cluster_config'):
                 parser.add_argument("--{}".format(key), default=value, help=self.description.get(key))
         parser.parse_args(argv, self)
+        if cluster_config:
+            self.cluster_config = cluster_config
+        for attr in ('config_file', 'cluster_config'):
+            if not getattr(self, attr):
+                delattr(self, attr)
 
 
 class App(ABC):

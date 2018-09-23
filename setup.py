@@ -7,7 +7,7 @@ with open(path.join(here, 'README.rst')) as f:
 
 setup(
     name='iow-mongo-tools',
-    version='0.0.5',
+    version='0.2.0',
     description='Various tools for maintenance mongo cluster',
     long_description=long_description,
     url='https://confluence.iponweb.net/display/OPS/iow-mongo-tools',
@@ -29,7 +29,7 @@ setup(
     tests_require=['pytest', 'pyaml'],
     entry_points={
         'console_scripts': [
-            'iowmongotools=iowmongotools:MongoCheckCli.entry',
+            'iowmongotools=iowmongotools.cluster:MongoCheckerCli.entry',
         ],
     },
 )
