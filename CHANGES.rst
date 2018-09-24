@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.2.1 (2018-09-24)
+------------------
+- use mongomock instead of pymongo for tests. #IOWOPS-13114
+- changed version of pymongo to 3.5.1 in requirements #IOWOPS-13114
+- handle case in mongo_check when cluster_config absents #IOWOPS-13114
+
 0.2.0 (2018-09-23)
 ------------------
 - added entity config_cluster to Settings and SettingsCli. #IOWOPS-13114

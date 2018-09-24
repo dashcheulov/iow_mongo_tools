@@ -24,9 +24,9 @@ setup(
     ],
     keywords='mongo iow',
     packages=find_packages(),
-    install_requires=['pymongo>=3.7.1'],
+    install_requires=['pymongo>=3.5.1'],
     setup_requires=['pytest-runner'],
-    tests_require=['pytest', 'pyaml'],
+    tests_require=['pytest', 'pyaml', 'mongomock'],
     entry_points={
         'console_scripts': [
             'mongo_check=iowmongotools:MongoCheckerCli.entry',
