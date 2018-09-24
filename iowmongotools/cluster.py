@@ -7,6 +7,24 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def create_objects(clusters, cluster_config):
+    """
+    :type clusters: iterable
+    :param clusters: list of cluster's names to create
+    :type cluster_config: dict
+    :type cluster_config: configuration of clusters. Keys are names, values are configs.
+
+    :returns amount of created objects
+    """
+    counter = 0
+    for name in clusters:
+        try:
+            Cluster(name, cluster_config[name])
+            counter = +1
+        except KeyError as key:
+            logger.error('Cannot find config for cluster %s', key)
+    return counter
+
 class Cluster(object):
     """ Represents mongo cluster """
     objects = dict()
@@ -37,13 +55,13 @@ class Cluster(object):
           project:
             partitioned: true
         """
-        self.declared_config = cluster_config
+        self._declared_config = cluster_config
         self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
-        self.name = name
+        self._name = name
 
     @property
     def actual_config(self):
-        logger.debug('Reading configuration of cluster %s', self.name)
+        logger.debug('Reading configuration of cluster %s', self._name)
         db = self._api.config
         out = dict()
         out['mongos'] = [col['_id'] for col in db['mongos'].find()]
@@ -55,31 +73,12 @@ class Cluster(object):
 
     def check_config(self):
         actual_config = self.actual_config
-        if self.declared_config == actual_config:
-            logger.info('Declared configuration of cluster \'%s\' is actual.', self.name)
+        if self._declared_config == actual_config:
+            logger.info('Declared configuration of cluster \'%s\' is actual.', self._name)
             return True
         else:
             logger.warning(
                 'Declared configuration of cluster \'%s\' is not actual.\nDeclared:\n---\n%s...\nActual:\n---\n%s...',
-                self.name, yaml.safe_dump(self.declared_config, default_flow_style=False),
+                self._name, yaml.safe_dump(self._declared_config, default_flow_style=False),
                 yaml.safe_dump(actual_config, default_flow_style=False))
             return False
-
-
-class MongoChecker(app.App):
-
-    @property
-    def default_config(self):
-        config = super().default_config
-        config.update({
-            'all_clusters': (False, 'Check all clusters')
-        })
-        return config
-
-
-class MongoCheckerCli(MongoChecker, app.AppCli):
-
-    def run(self):
-        logger.debug('wkbkbefv')
-        logger.info('vjn')
-        return 0

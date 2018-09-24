@@ -7,6 +7,7 @@ Changelog (iow-mongo-tools)
 - changed Settings.load_config() #IOWOPS-13114
 - got parsed arguments with ArgumentDefaultsHelpFormatter. #IOWOPS-13114
 - added singleton Cluster with tests. #IOWOPS-13114
+- added class MongoCheckerCli and entrypoint mongo_check. #IOWOPS-13114
 
 0.1.9 (2018-08-15)
 ------------------

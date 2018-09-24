@@ -29,7 +29,7 @@ setup(
     tests_require=['pytest', 'pyaml'],
     entry_points={
         'console_scripts': [
-            'iowmongotools=iowmongotools.cluster:MongoCheckerCli.entry',
+            'mongo_check=iowmongotools:MongoCheckerCli.entry',
         ],
     },
 )
