@@ -25,6 +25,7 @@ def create_objects(clusters, cluster_config):
             logger.error('Cannot find config for cluster %s', key)
     return counter
 
+
 class Cluster(object):
     """ Represents mongo cluster """
     objects = dict()
@@ -63,12 +64,14 @@ class Cluster(object):
     def actual_config(self):
         logger.debug('Reading configuration of cluster %s', self._name)
         db = self._api.config
-        out = dict()
+        out = dict({'databases': {}, 'collections': {}})
         out['mongos'] = [col['_id'] for col in db['mongos'].find()]
         out['shards'] = [col['host'] for col in db['shards'].find()]
-        out['databases'] = [{col['_id']: {'partitioned': col['partitioned']}} for col in db['databases'].find()]
-        out['collections'] = [{col['_id']: {'key': col['key'], 'unique': col['unique']}} for col in
-                              db['collections'].find() if not col['dropped']]  # not return dropped collections
+        for col in db['databases'].find():
+            out['databases'].update({col['_id']: {'partitioned': col['partitioned']}})
+        for col in db['collections'].find():
+            if not col['dropped']:  # not return dropped collections
+                out['collections'].update({col['_id']: {'key': col['key'], 'unique': col['unique']}})
         return out
 
     def check_config(self):

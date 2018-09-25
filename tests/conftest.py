@@ -15,6 +15,7 @@ def local_cluster():
     for key in cluster_config:
         client.config[key].drop()
         client.config[key].insert_many(cluster_config[key])
-    client.close()
 
-    return cluster.Cluster('local', {'mongos': ['localhost:27017']})
+    local_cluster_instance = cluster.Cluster('local', {'mongos': ['localhost:27017']})
+    local_cluster_instance._api = client
+    return local_cluster_instance

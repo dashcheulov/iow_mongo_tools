@@ -5,15 +5,17 @@ sample_cluster_config = {
                'mongo-gce-or-3.project.iponweb.net:27017'],
     'shards': ['mongo-gce-or-1.project.iponweb.net:27019', 'mongo-gce-or-2.project.iponweb.net:27019',
                'mongo-gce-or-3.project.iponweb.net:27019'],
-    'databases': [{'admin': {'partitioned': False}}, {'db': {'partitioned': False}},
-                  {'test': {'partitioned': False}}, {'project': {'partitioned': True}}],
-    'collections': [{'project.cookies': {'key': {'_id': 'hashed'}, 'unique': False}},
-                    {'project.uuidh': {'key': {'_id': 'hashed'}, 'unique': False}}]}
+    'databases': {'admin': {'partitioned': False}, 'db': {'partitioned': False},
+                  'test': {'partitioned': False}, 'project': {'partitioned': True}},
+    'collections': {'project.cookies': {'key': {'_id': 'hashed'}, 'unique': False},
+                    'project.uuidh': {'key': {'_id': 'hashed'}, 'unique': False}}}
 
 
 def test_cluster_instance_is_singleton(local_cluster):
     # creating instance of existing cluster must return the same object
+    _client = local_cluster._api
     new_cluster_instance = cluster.Cluster('local', {'mongos': ['localhost:27017']})
+    local_cluster._api = _client
     assert local_cluster is new_cluster_instance
 
 
