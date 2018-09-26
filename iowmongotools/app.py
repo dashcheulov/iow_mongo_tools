@@ -115,6 +115,7 @@ class AppCli(App):
     def default_config(self):
         """ :returns Dict with default settings and its descriptions """
         return {
+            'config_file': ('/etc/iow-mongo-tools/config.yaml', 'Path to yaml file containing settings'),
             'log_level': (
                 'info',
                 'Level of root logger. E.g. \'info\' or \'debug\'.'

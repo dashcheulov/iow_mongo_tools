@@ -20,7 +20,7 @@ def create_objects(clusters, cluster_config):
     for name in clusters:
         try:
             Cluster(name, cluster_config[name])
-            counter = +1
+            counter += 1
         except KeyError as key:
             logger.error('Cannot find config for cluster %s', key)
     return counter

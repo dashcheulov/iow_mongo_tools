@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.2.3 (2018-09-26)
+------------------
+- added multithreading in MongoCheckerCli. #IOWOPS-13114
+- defined default config_file. #IOWOPS-13114
+- fixed counter in Cluster.create_objects(). #IOWOPS-13114
+
 0.2.2 (2018-09-25)
 ------------------
 - changed format of Cluster.actual_config. #IOWOPS-13114
