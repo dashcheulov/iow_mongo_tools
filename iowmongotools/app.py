@@ -96,18 +96,21 @@ class SettingsCli(Settings):
 
 class Command(object):
 
-    def __init__(self, kallable, kwargs, description):
+    def __init__(self, kallable, args=tuple(), kwargs=dict(), description=str()):
         if not hasattr(kallable, '__call__'):
             raise TypeError("%s executes only callable objects" % Command.__name__)
+        if not isinstance(args, (tuple, list)):
+            raise TypeError('args must be a tuple or list')
         if not isinstance(kwargs, dict):
             raise TypeError('kwargs must be a dict')
         self.func = kallable
+        self.args = args
         self.kwargs = kwargs
         self.description = description
 
     def execute(self):
         logger.info(self)
-        return self.func(**self.kwargs)
+        return self.func(*self.args, **self.kwargs)
 
     def __str__(self):
         return self.description
@@ -133,7 +136,7 @@ class Invoker(object):
 
     def print(self):
         for command in self.registry:
-            logger.info('Whould do %s', command)
+            logger.info('Would do %s', command)
 
 
 class App(ABC):

@@ -1,7 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
-0.3.0
+0.3.1 (2018-11-02)
+------------------
+- added args to class Command, fixed cluster's commands #IOWOPS-13114
+
+0.3.0 (2018-11-02)
 ------------------
 - added admin commands to cluster #IOWOPS-13114
 - added endpoint mongo_set #IOWOPS-13114

@@ -64,14 +64,15 @@ class Cluster(object):
         """ :returns dict of lists of commands """
         sharded_dbs = (db for db, params in self._declared_config['databases'].items() if params['partitioned'])
         commands = {
-            'add_shards': [app.Command(self._api.admin.command, {'addshard': shard, 'name': shard.split('.')[0]},
-                                       'adding shard %s to %s' % (shard, self.name)) for shard in
+            'add_shards': [app.Command(self._api.admin.command, ('addshard', shard),
+                                       description='adding shard %s to %s' % (shard, self.name)) for shard in
                            self._declared_config['shards']],
-            'enable_sharding': [app.Command(self._api.admin.command, {'enableSharding': db_name},
-                                            'enabling sharding for database %s' % db_name) for db_name in sharded_dbs],
-            'shard_collections': [app.Command(self._api.admin.command, {'shardCollection': name, **params},
-                                              'enabling sharding for collection %s by %s' % (name, params)) for
-                                  name, params in self._declared_config['collections'].items()]
+            'enable_sharding': [app.Command(self._api.admin.command, ('enableSharding', db_name),
+                                            description='enabling sharding for database %s' % db_name) for db_name in
+                                sharded_dbs],
+            'shard_collections': [app.Command(self._api.admin.command, kwargs={'shardCollection': name, **params},
+                                              description='enabling sharding for collection %s by %s' % (name, params))
+                                  for name, params in self._declared_config['collections'].items()]
         }
         return commands
 

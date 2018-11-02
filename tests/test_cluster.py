@@ -50,11 +50,14 @@ def test_create_objects_with_partial_config():
 def test_generate_commands():
     sample_cluster = cluster.Cluster('cluster_name', sample_cluster_config)
     sample_cluster._api.admin.command = print
-    actual_description, actual_kwargs = list(), list()
+    actual_description, actual_args, actual_kwargs = list(), list(), list()
     for name, cmds in sample_cluster.generate_commands().items():
         for cmd in cmds:
             actual_description.append(str(cmd))
-            actual_kwargs.append(cmd.kwargs)
+            if cmd.args:
+                actual_args.append(cmd.args)
+            if cmd.kwargs:
+                actual_kwargs.append(cmd.kwargs)
     description_of_all_commands = [
         'adding shard mongo-gce-or-1.project.iponweb.net:27019 to cluster_name',
         'adding shard mongo-gce-or-2.project.iponweb.net:27019 to cluster_name',
@@ -62,14 +65,19 @@ def test_generate_commands():
         'enabling sharding for database project',
         'enabling sharding for collection project.cookies by {\'key\': {\'_id\': \'hashed\'}, \'unique\': False}',
         'enabling sharding for collection project.uuidh by {\'key\': {\'_id\': \'hashed\'}, \'unique\': False}']
+    args_of_all_commands = [
+        ('addshard', 'mongo-gce-or-1.project.iponweb.net:27019'),
+        ('addshard', 'mongo-gce-or-2.project.iponweb.net:27019'),
+        ('addshard', 'mongo-gce-or-3.project.iponweb.net:27019'),
+        ('enableSharding', 'project')
+    ]
     kwargs_of_all_commands = [
-        {'addshard': 'mongo-gce-or-1.project.iponweb.net:27019', 'name': 'mongo-gce-or-1'},
-        {'addshard': 'mongo-gce-or-2.project.iponweb.net:27019', 'name': 'mongo-gce-or-2'},
-        {'addshard': 'mongo-gce-or-3.project.iponweb.net:27019', 'name': 'mongo-gce-or-3'},
-        {'enableSharding': 'project'},
         {'shardCollection': 'project.cookies', 'key': {'_id': 'hashed'}, 'unique': False},
         {'shardCollection': 'project.uuidh', 'key': {'_id': 'hashed'}, 'unique': False}]
+    print(actual_args)
+    print(actual_kwargs)
     assert actual_description == description_of_all_commands
+    assert actual_args == args_of_all_commands
     assert actual_kwargs == kwargs_of_all_commands
 
 

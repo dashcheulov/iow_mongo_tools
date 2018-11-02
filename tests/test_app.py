@@ -180,7 +180,7 @@ def test_class_appcli_init_logging(monkeypatch):
 
 def test_class_command():
     sample_dict = dict()
-    sample_command = app.Command(sample_dict.update, {'test': 'update_dict'}, 'updating sample_dict')
+    sample_command = app.Command(sample_dict.update, kwargs={'test': 'update_dict'}, description='updating sample_dict')
     sample_command.execute()
     assert sample_dict == {'test': 'update_dict'}
     assert str(sample_command) == 'updating sample_dict'
@@ -197,7 +197,8 @@ def test_class_invoker():
     sample_dict = dict()
     commands = list()
     for i in range(3):
-        commands.append(app.Command(sample_dict.update, {'test%s' % i: 'update_dict%s' % i}, 'adding test%s' % i))
+        commands.append(app.Command(sample_dict.update, kwargs={'test%s' % i: 'update_dict%s' % i},
+                                    description='adding test%s' % i))
     # adding a Command
     invoker.add(commands[0])
     assert len(invoker.registry) == 1

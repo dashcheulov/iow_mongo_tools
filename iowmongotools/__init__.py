@@ -1,7 +1,7 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.3.0"
-__status__ = "Planning"
+__version__ = "0.3.1"
+__status__ = "Pre-Alpha"
 
 import logging
 from multiprocessing.pool import ThreadPool
@@ -42,7 +42,7 @@ class MongoSetCli(app.AppCli):
             return 1
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
         pool = ThreadPool(processes=len(cluster.Cluster.objects))
-        results = [pool.apply_async(self.process_cluster(_cluster)) for name, _cluster in
+        results = [pool.apply_async(self.process_cluster, (_cluster,)) for name, _cluster in
                    cluster.Cluster.objects.items()]
         for result in results:
             if not result.get():
@@ -52,7 +52,6 @@ class MongoSetCli(app.AppCli):
     def process_cluster(self, cluster):
         invoker = app.Invoker()
         actual_config = cluster.actual_config
-        logger.warning('Config of cluster %s is not empty. Skipping', cluster.name)
         commands = cluster.generate_commands()
         if len(actual_config['shards']) == 0 or self.config.force:
             invoker.add(commands['add_shards'])
@@ -69,8 +68,9 @@ class MongoSetCli(app.AppCli):
             invoker.add(commands['shard_collections'])
         else:
             logger.warning('There are collections %s in cluster %s. Skipping sharding collections',
-                           actual_config['collections'], cluster.name)
+                           [name for name, p in actual_config['collections'].items()], cluster.name)
         if self.config.dry:
             invoker.print()
         else:
             invoker.execute()
+        return True
