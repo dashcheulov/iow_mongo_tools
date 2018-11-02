@@ -131,6 +131,10 @@ class Invoker(object):
         for command in self.registry:
             logger.debug(command.execute())
 
+    def print(self):
+        for command in self.registry:
+            logger.info('Whould do %s', command)
+
 
 class App(ABC):
     SettingsClass = Settings

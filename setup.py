@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mongo_check=iowmongotools:MongoCheckerCli.entry',
+            'mongo_set=iowmongotools:MongoSetCli.entry',
         ],
     },
 )

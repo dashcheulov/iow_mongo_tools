@@ -1,9 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
-Unreleased
+0.3.0
 ------------------
 - added admin commands to cluster #IOWOPS-13114
+- added endpoint mongo_set #IOWOPS-13114
 
 0.2.4 (2018-09-26)
 ------------------
