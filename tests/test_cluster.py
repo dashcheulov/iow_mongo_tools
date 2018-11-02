@@ -1,4 +1,4 @@
-from iowmongotools import cluster, app
+from iowmongotools import cluster
 
 sample_cluster_config = {
     'mongos': ['mongo-gce-or-1.project.iponweb.net:27017', 'mongo-gce-or-2.project.iponweb.net:27017',
@@ -49,6 +49,7 @@ def test_create_objects_with_partial_config():
 
 def test_generate_commands():
     sample_cluster = cluster.Cluster('cluster_name', sample_cluster_config)
+    sample_cluster._api.admin.command = print
     actual_description, actual_kwargs = list(), list()
     for name, cmds in sample_cluster.generate_commands().items():
         for cmd in cmds:
