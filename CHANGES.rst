@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+Unreleased
+------------------
+- added admin commands to cluster #IOWOPS-13114
+
 0.2.4 (2018-09-26)
 ------------------
 - mocked 'import pymongo' in tests. #IOWOPS-13114

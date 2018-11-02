@@ -1,7 +1,7 @@
 """ Manages mongo cluster """
 from iowmongotools import app
-import pymongo
 import logging
+import pymongo
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,21 @@ class Cluster(object):
         self._declared_config = cluster_config
         self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
         self._name = name
+
+    def generate_commands(self):
+        """ :returns dict of lists of commands """
+        sharded_dbs = (db for db, params in self._declared_config['databases'].items() if params['partitioned'])
+        commands = {
+            'add_shards': [app.Command(self._api.admin.command, {'addshard': shard, 'name': shard.split('.')[0]},
+                                       'adding shard %s to %s' % (shard, self._name)) for shard in
+                           self._declared_config['shards']],
+            'enable_sharding': [app.Command(self._api.admin.command, {'enableSharding': db_name},
+                                            'enabling sharding for database %s' % db_name) for db_name in sharded_dbs],
+            'shard_collections': [app.Command(self._api.admin.command, {'shardCollection': name, **params},
+                                              'enabling sharding for collection %s by %s' % (name, params)) for
+                                  name, params in self._declared_config['collections'].items()]
+        }
+        return commands
 
     @property
     def actual_config(self):

@@ -176,3 +176,39 @@ def test_class_appcli_init_logging(monkeypatch):
     assert app.logging.root.level == 30  # matches to warning level
     assert appcli_instance.config.logging['formatters']['console']['format'] == \
            app.logging.root.handlers[0].formatter._fmt
+
+
+def test_class_command():
+    sample_dict = dict()
+    sample_command = app.Command(sample_dict.update, {'test': 'update_dict'}, 'updating sample_dict')
+    sample_command.execute()
+    assert sample_dict == {'test': 'update_dict'}
+    assert str(sample_command) == 'updating sample_dict'
+    with pytest.raises(TypeError) as excinfo:
+        app.Command(sample_dict, {'test': 'update_dict'}, 'updating sample_dict')
+    assert str(excinfo.value) == 'Command executes only callable objects'
+    with pytest.raises(TypeError) as excinfo:
+        app.Command(sample_dict.update, ['test', 'update_dict'], 'updating sample_dict')
+    assert str(excinfo.value) == 'kwargs must be a dict'
+
+
+def test_class_invoker():
+    invoker = app.Invoker()
+    sample_dict = dict()
+    commands = list()
+    for i in range(3):
+        commands.append(app.Command(sample_dict.update, {'test%s' % i: 'update_dict%s' % i}, 'adding test%s' % i))
+    # adding a Command
+    invoker.add(commands[0])
+    assert len(invoker.registry) == 1
+    invoker.execute()
+    assert sample_dict['test0'] == 'update_dict0'
+    # adding list of Commands
+    invoker.add(commands[1:])
+    assert len(invoker.registry) == 3
+    invoker.execute()
+    assert sample_dict['test2'] == 'update_dict2'
+    # adding garbage instead of Command
+    with pytest.raises(TypeError) as excinfo:
+        invoker.add(sample_dict)
+    assert str(excinfo.value) == 'Instanses of \'Command\' class are allowed only'

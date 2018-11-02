@@ -23,3 +23,18 @@ class MongoCheckerCli(app.AppCli):
             if not result.get():
                 errors += 1
         return errors
+
+
+class MongoSetCli(app.AppCli):
+
+    @property
+    def default_config(self):
+        config = super().default_config
+        config.update({
+            'dry': (True, 'During dry run it won\'t be actually done anything.')
+        })
+        return config
+
+    def run(self):
+        invoker = app.Invoker()
+        return 0

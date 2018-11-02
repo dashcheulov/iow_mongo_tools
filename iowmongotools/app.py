@@ -94,6 +94,44 @@ class SettingsCli(Settings):
                 delattr(self, attr)
 
 
+class Command(object):
+
+    def __init__(self, kallable, kwargs, description):
+        if not hasattr(kallable, '__call__'):
+            raise TypeError("%s executes only callable objects" % Command.__name__)
+        if not isinstance(kwargs, dict):
+            raise TypeError('kwargs must be a dict')
+        self.func = kallable
+        self.kwargs = kwargs
+        self.description = description
+
+    def execute(self):
+        logger.info(self)
+        return self.func(**self.kwargs)
+
+    def __str__(self):
+        return self.description
+
+
+class Invoker(object):
+
+    def __init__(self):
+        self.registry = []
+
+    def add(self, command):
+        if isinstance(command, (list, tuple)):
+            for cmd in command:
+                self.add(cmd)
+            return
+        if not issubclass(command.__class__, Command):
+            raise TypeError("Instanses of '%s' class are allowed only" % Command.__name__)
+        self.registry.append(command)
+
+    def execute(self):
+        for command in self.registry:
+            logger.debug(command.execute())
+
+
 class App(ABC):
     SettingsClass = Settings
 
