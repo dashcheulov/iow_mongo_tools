@@ -69,11 +69,13 @@ def test_generate_commands():
         ('addshard', 'mongo-gce-or-1.project.iponweb.net:27019'),
         ('addshard', 'mongo-gce-or-2.project.iponweb.net:27019'),
         ('addshard', 'mongo-gce-or-3.project.iponweb.net:27019'),
-        ('enableSharding', 'project')
+        ('enableSharding', 'project'),
+        ('shardCollection', 'project.cookies'),
+        ('shardCollection', 'project.uuidh')
     ]
     kwargs_of_all_commands = [
-        {'shardCollection': 'project.cookies', 'key': {'_id': 'hashed'}, 'unique': False},
-        {'shardCollection': 'project.uuidh', 'key': {'_id': 'hashed'}, 'unique': False}]
+        {'key': {'_id': 'hashed'}, 'unique': False},
+        {'key': {'_id': 'hashed'}, 'unique': False}]
     print(actual_args)
     print(actual_kwargs)
     assert actual_description == description_of_all_commands

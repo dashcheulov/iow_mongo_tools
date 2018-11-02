@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.3.2 (2018-11-02)
+------------------
+- fixed command 'shard_collection' #IOWOPS-13114
+
 0.3.1 (2018-11-02)
 ------------------
 - added args to class Command, fixed cluster's commands #IOWOPS-13114
