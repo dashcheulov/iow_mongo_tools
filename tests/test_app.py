@@ -141,7 +141,7 @@ def test_class_settingscli_load_cluster_config_through_argument(monkeypatch, tmp
     settings_instance = app.SettingsCli(defaults)
     assert settings_instance.property == 'sample'
     assert settings_instance.cluster_config['aws-va'] == {'mongos': ['mongos1:27017']}
-    assert settings_instance.clusters == ['aws-va', 'gce-eu']
+    assert settings_instance.clusters == {'aws-va', 'gce-eu'}
 
 
 def test_class_app_load_defaults_into_variable(tmpdir):

@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.0 (2018-11-06)
+------------------
+- deprecated `upload.run_command` in favor of `app.run_ext_command` #IOWOPS-13114
+- added utility `mongo_clone` #IOWOPS-13114
+- Changed type of App.config.clusters from list to set #IOWOPS-13114
+
 0.3.2 (2018-11-02)
 ------------------
 - fixed command 'shard_collection' #IOWOPS-13114

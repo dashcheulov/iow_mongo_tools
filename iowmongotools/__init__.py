@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 __status__ = "Pre-Alpha"
 
 import logging
@@ -69,6 +69,55 @@ class MongoSetCli(app.AppCli):
         else:
             logger.warning('There are collections %s in cluster %s. Skipping sharding collections',
                            [name for name, p in actual_config['collections'].items()], cluster.name)
+        if self.config.dry:
+            invoker.print()
+        else:
+            invoker.execute()
+        return True
+
+
+class MongoCloneCli(app.AppCli):
+
+    @property
+    def default_config(self):
+        config = super().default_config
+        config.update({
+            'dry': (False, 'During dry run actions will just be printed.'),
+            'force': (False, 'Copy collection even it doesn\'t exist on destination. It will be created unsharded.'),
+            'upsert': (True, 'Insert document, if it doesn\'t exist at destination..'),
+            'src': ('', 'Name of source cluster'),
+            'dst': ('', 'Name of destination cluster')
+        })
+        return config
+
+    def run(self):
+        if {self.config.src, self.config.dst} - self.config.clusters:
+            logger.error('Both source and destination clusters must be described in cluster_config.yaml. See --help.')
+            return 1
+        logger.debug('Taking actual list of shards and sharded collections of cluster %s.', self.config.src)
+        src_config = cluster.Cluster(self.config.src, self.config.cluster_config).actual_config
+        dst_config = cluster.Cluster(self.config.dst, self.config.cluster_config).actual_config
+        if src_config['collections'] != dst_config['collections'] and not self.config.force:
+            logger.error(
+                'Source collections: %s\nDestination collections: %s\nBoth source and destination clusters are expected to have the same list of collections. Please use parameter --force or utility \'mongo_set\' to configure cluster.')
+            return 1
+        logger.debug('Taking the fist mongos from config of cluster %s', self.config.dst)
+        mongos, dst_port = self.config.cluster_config[self.config.dst]['mongos'][0].split(':')
+        invoker = app.Invoker()
+        for collection, params in src_config['collections'].items():
+            database, collection = collection.split('.')
+            for shard in src_config['shards']:
+                shard, src_port = shard.split(':')
+                invoker.add(app.Command(app.run_ext_command,
+                                        (('ssh', '-o UserKnownHostsFile=/dev/null', '-o StrictHostKeyChecking=no', '-A',
+                                          '-t', shard, '\'mongoexport', '-h', shard, '--port', src_port, '-d', database,
+                                          '-c', collection, '| gzip -c |',
+                                          'ssh', '-o UserKnownHostsFile=/dev/null', '-o StrictHostKeyChecking=no', '-A',
+                                          '-t', mongos, '"cat - | gunzip -c | mongoimport',
+                                          '--upsert' if self.config.upsert else '', '-d', database, '-c', collection,
+                                          '-h', '127.0.0.1', '--port', dst_port, '"\'',)),
+                                        'copy collection \'%s\' of db \'%s\' from %s to %s' % (
+                                            collection, database, shard, mongos)))
         if self.config.dry:
             invoker.print()
         else:

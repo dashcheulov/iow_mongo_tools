@@ -5,10 +5,25 @@ import logging
 import logging.config
 from abc import ABC, abstractmethod
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+import subprocess
 import yaml
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def run_ext_command(args, title=''):
+    """ Runs external command
+    :returns exit code
+    """
+    logger.info("Executing command: %s", " ".join(args))
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
+                            universal_newlines=True)
+    prefix = '{}{}'.format(title, '> ' if title else '')
+    with proc.stdout:
+        for line in proc.stdout:
+            logger.info('%s%s', prefix, line.strip())
+    return proc.wait()
 
 
 class Settings(object):
@@ -89,6 +104,7 @@ class SettingsCli(Settings):
         parser.parse_args(argv, self)
         if cluster_config:
             self.cluster_config = cluster_config
+            self.clusters = frozenset(self.clusters)
         for attr in ('config_file', 'cluster_config'):
             if not getattr(self, attr):
                 delattr(self, attr)

@@ -7,7 +7,7 @@ with open(path.join(here, 'README.rst')) as f:
 
 setup(
     name='iow-mongo-tools',
-    version='0.3.2',
+    version='0.4.0',
     description='Various tools for maintenance mongo cluster',
     long_description=long_description,
     url='https://confluence.iponweb.net/display/OPS/iow-mongo-tools',
@@ -30,7 +30,8 @@ setup(
     entry_points={
         'console_scripts': [
             'mongo_check=iowmongotools:MongoCheckerCli.entry',
-            'mongo_set=iowmongotools:MongoSetCli.entry'
+            'mongo_set=iowmongotools:MongoSetCli.entry',
+            'mongo_clone=iowmongotools:MongoCloneCli.entry'
         ],
     },
 )

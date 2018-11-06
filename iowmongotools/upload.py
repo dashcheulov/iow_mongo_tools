@@ -16,10 +16,11 @@ from iowmongotools import app
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def run_command(args, cluster):
+def run_command(args, cluster):  # deprecated
     """ Runs external command
     :returns exit code
     """
+    logger.warning('Deprecated function \'iowmongotools.upload.run_command\' is being called')
     logger.info("Running command: %s", " ".join(args))
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
                             universal_newlines=True)
