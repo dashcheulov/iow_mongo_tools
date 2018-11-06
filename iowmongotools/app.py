@@ -147,8 +147,12 @@ class Invoker(object):
         self.registry.append(command)
 
     def execute(self):
+        errors = 0
         for command in self.registry:
-            logger.debug(command.execute())
+            result = command.execute()
+            if result is False or result != 0:
+                errors += 1
+        return errors
 
     def print(self):
         for command in self.registry:

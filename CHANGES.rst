@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.1 (2018-11-06)
+------------------
+- fixed ssh command of copying collection #IOWOPS-13114
+
 0.4.0 (2018-11-06)
 ------------------
 - deprecated `upload.run_command` in favor of `app.run_ext_command` #IOWOPS-13114
