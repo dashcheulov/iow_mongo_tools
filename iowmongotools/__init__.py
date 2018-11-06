@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 __status__ = "Pre-Alpha"
 
 import logging
@@ -99,7 +99,9 @@ class MongoCloneCli(app.AppCli):
         dst_config = cluster.Cluster(self.config.dst, self.config.cluster_config[self.config.dst]).actual_config
         if src_config['collections'] != dst_config['collections'] and not self.config.force:
             logger.error(
-                'Source collections: %s\nDestination collections: %s\nBoth source and destination clusters are expected to have the same list of collections. Please use parameter --force or utility \'mongo_set\' to configure cluster.')
+                'Source collections: %s\nDestination collections: %s\nBoth source and destination clusters are expected to have the same list of collections. Please use parameter --force or utility \'mongo_set\' to configure cluster.',
+                [name for name, params in src_config['collections'].items()],
+                [name for name, params in dst_config['collections'].items()])
             return 1
         logger.debug('Taking the fist mongos from config of cluster %s', self.config.dst)
         mongos, dst_port = self.config.cluster_config[self.config.dst]['mongos'][0].split(':')
@@ -120,4 +122,4 @@ class MongoCloneCli(app.AppCli):
             invoker.print()
         else:
             return invoker.execute()
-        return True
+        return 0

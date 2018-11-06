@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.2 (2018-11-07)
+------------------
+- fixed sensitivity of Cluster.check_config to order of shards or mongos #IOWOPS-13114
+
 0.4.1 (2018-11-06)
 ------------------
 - fixed ssh command of copying collection #IOWOPS-13114

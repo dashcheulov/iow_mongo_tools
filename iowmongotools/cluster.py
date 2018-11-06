@@ -92,6 +92,10 @@ class Cluster(object):
 
     def check_config(self):
         actual_config = self.actual_config
+        for item in ('mongos', 'shards'):
+            if item in actual_config and item in self._declared_config:
+                actual_config[item].sort()
+                self._declared_config[item].sort()
         if self._declared_config == actual_config:
             logger.info('Declared configuration of cluster \'%s\' is actual.', self.name)
             return True
