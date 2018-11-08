@@ -52,12 +52,13 @@ def test_generate_commands():
     sample_cluster._api.admin.command = print
     actual_description, actual_args, actual_kwargs = list(), list(), list()
     for name, cmds in sample_cluster.generate_commands().items():
-        for cmd in cmds:
-            actual_description.append(str(cmd))
-            if cmd.args:
-                actual_args.append(cmd.args)
-            if cmd.kwargs:
-                actual_kwargs.append(cmd.kwargs)
+        if isinstance(cmds, (list, tuple)):
+            for cmd in cmds:
+                actual_description.append(str(cmd))
+                if cmd.args:
+                    actual_args.append(cmd.args)
+                if cmd.kwargs:
+                    actual_kwargs.append(cmd.kwargs)
     description_of_all_commands = [
         'adding shard mongo-gce-or-1.project.iponweb.net:27019 to cluster_name',
         'adding shard mongo-gce-or-2.project.iponweb.net:27019 to cluster_name',

@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.3 (2018-11-08)
+------------------
+- mongo_set. added step of removal database 'test' from each shard #IOWOPS-13114
+
 0.4.2 (2018-11-07)
 ------------------
 - fixed sensitivity of Cluster.check_config to order of shards or mongos #IOWOPS-13114

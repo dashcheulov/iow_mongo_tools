@@ -104,7 +104,7 @@ class SettingsCli(Settings):
         parser.parse_args(argv, self)
         if cluster_config:
             self.cluster_config = cluster_config
-            self.clusters = frozenset(self.clusters)
+            self.clusters = set(self.clusters)
         for attr in ('config_file', 'cluster_config'):
             if not getattr(self, attr):
                 delattr(self, attr)

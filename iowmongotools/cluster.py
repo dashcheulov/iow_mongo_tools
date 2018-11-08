@@ -1,6 +1,7 @@
 """ Manages mongo cluster """
 from iowmongotools import app
 import logging
+from multiprocessing.pool import ThreadPool
 import pymongo
 import yaml
 
@@ -72,9 +73,25 @@ class Cluster(object):
                                 sharded_dbs],
             'shard_collections': [app.Command(self._api.admin.command, ('shardCollection', name), params,
                                               'enabling sharding for collection %s by %s' % (name, params))
-                                  for name, params in self._declared_config['collections'].items()]
+                                  for name, params in self._declared_config['collections'].items()],
+            'drop_test_database': app.Command(self.drop_test_database,
+                                               description='removing database test from each shard')
         }
         return commands
+
+    def drop_test_database(self):
+        pool = ThreadPool(processes=min(len(self._declared_config['shards']), 5))
+        results = [pool.apply_async(self.remove_test_database_from_shard, (shard,)) for shard in
+                   self._declared_config['shards']]
+        for result in results:
+            logger.debug('%s', result.get())
+
+    @staticmethod
+    def remove_test_database_from_shard(shard):
+        _api = pymongo.MongoClient('mongodb://%s' % shard)
+        logger.debug('Dropping test database on %s', shard)
+        _api.drop_database('test')
+        _api.close()
 
     @property
     def actual_config(self):

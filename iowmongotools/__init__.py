@@ -54,6 +54,7 @@ class MongoSetCli(app.AppCli):
         actual_config = cluster.actual_config
         commands = cluster.generate_commands()
         if len(actual_config['shards']) == 0 or self.config.force:
+            invoker.add(commands['drop_test_database'])
             invoker.add(commands['add_shards'])
         else:
             logger.warning('There are already shards %s at cluster %s. Skipping adding shards', actual_config['shards'],
