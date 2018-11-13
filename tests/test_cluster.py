@@ -5,8 +5,7 @@ sample_cluster_config = {
                'mongo-gce-or-3.project.iponweb.net:27017'],
     'shards': ['mongo-gce-or-1.project.iponweb.net:27019', 'mongo-gce-or-2.project.iponweb.net:27019',
                'mongo-gce-or-3.project.iponweb.net:27019'],
-    'databases': {'admin': {'partitioned': False}, 'db': {'partitioned': False},
-                  'test': {'partitioned': False}, 'project': {'partitioned': True}},
+    'databases': {'admin': {'partitioned': False}, 'test': {'partitioned': False}, 'project': {'partitioned': True}},
     'collections': {'project.cookies': {'key': {'_id': 'hashed'}, 'unique': False},
                     'project.uuidh': {'key': {'_id': 'hashed'}, 'unique': False}}}
 
