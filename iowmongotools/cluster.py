@@ -58,7 +58,7 @@ class Cluster(object):
             partitioned: true
         """
         self._declared_config = cluster_config
-        self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']])
+        self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
         self.name = name
 
     def generate_commands(self):
