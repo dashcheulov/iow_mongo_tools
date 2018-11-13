@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.4 (2018-11-13)
+------------------
+- excluded service database 'db' from output #IOWOPS-13114
+
 0.4.3 (2018-11-08)
 ------------------
 - mongo_set. added step of removal database 'test' from each shard #IOWOPS-13114

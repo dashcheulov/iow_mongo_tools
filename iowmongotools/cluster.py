@@ -58,7 +58,7 @@ class Cluster(object):
             partitioned: true
         """
         self._declared_config = cluster_config
-        self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
+        self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']])
         self.name = name
 
     def generate_commands(self):
@@ -84,7 +84,7 @@ class Cluster(object):
         results = [pool.apply_async(self.remove_test_database_from_shard, (shard,)) for shard in
                    self._declared_config['shards']]
         for result in results:
-            logger.debug('%s', result.get())
+            result.get()
 
     @staticmethod
     def remove_test_database_from_shard(shard):
@@ -96,13 +96,14 @@ class Cluster(object):
     @property
     def actual_config(self):
         logger.debug('Reading configuration of cluster %s', self.name)
-        db = self._api.config
+        config_db = self._api.config
         out = dict({'databases': {}, 'collections': {}})
-        out['mongos'] = [col['_id'] for col in db['mongos'].find()]
-        out['shards'] = [col['host'] for col in db['shards'].find()]
-        for col in db['databases'].find():
-            out['databases'].update({col['_id']: {'partitioned': col['partitioned']}})
-        for col in db['collections'].find():
+        out['mongos'] = [col['_id'] for col in config_db['mongos'].find()]
+        out['shards'] = [col['host'] for col in config_db['shards'].find()]
+        for db in config_db['databases'].find():
+            if db['_id'] != 'db':  # exclude service database db from output
+                out['databases'].update({db['_id']: {'partitioned': db['partitioned']}})
+        for col in config_db['collections'].find():
             if not col['dropped']:  # not return dropped collections
                 out['collections'].update({col['_id']: {'key': col['key'], 'unique': col['unique']}})
         return out
