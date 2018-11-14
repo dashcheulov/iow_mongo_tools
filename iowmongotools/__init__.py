@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 __status__ = "Pre-Alpha"
 
 import logging
@@ -32,7 +32,8 @@ class MongoSetCli(app.AppCli):
         config = super().default_config
         config.update({
             'dry': (False, 'During dry run it won\'t be actually done anything.'),
-            'force': (False, 'Certainly apply everything.')
+            'force': (False, 'Certainly apply everything.'),
+            'pre_remove_dbs': (['test'], 'Databases will be removed from each mongod beforehand.')
         })
         return config
 
@@ -45,16 +46,16 @@ class MongoSetCli(app.AppCli):
         results = [pool.apply_async(self.process_cluster, (_cluster,)) for name, _cluster in
                    cluster.Cluster.objects.items()]
         for result in results:
-            if not result.get():
+            if result.get() != 0:
                 errors += 1
         return errors
 
     def process_cluster(self, cluster):
         invoker = app.Invoker()
         actual_config = cluster.actual_config
-        commands = cluster.generate_commands()
+        commands = cluster.generate_commands(self.config.pre_remove_dbs, self.config.force)
         if len(actual_config['shards']) == 0 or self.config.force:
-            invoker.add(commands['drop_test_database'])
+            invoker.add(commands['pre_remove_dbs'])
             invoker.add(commands['add_shards'])
         else:
             logger.warning('There are already shards %s at cluster %s. Skipping adding shards', actual_config['shards'],
@@ -73,8 +74,8 @@ class MongoSetCli(app.AppCli):
         if self.config.dry:
             invoker.print()
         else:
-            invoker.execute()
-        return True
+            return invoker.execute(self.config.force)
+        return 0
 
 
 class MongoCloneCli(app.AppCli):

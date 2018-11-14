@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def run_command(args, cluster):  # deprecated
-    """ Runs external command
+    """ **DEPRECATED**: Runs external command
+    .. versionchanged:: 0.4
+    Deprecated. Use :meth:`app.run_ext_command` instead.
     :returns exit code
     """
     logger.warning('Deprecated function \'iowmongotools.upload.run_command\' is being called')

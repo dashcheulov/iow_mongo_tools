@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.5 (2018-11-14)
+------------------
+- added parameter 'pre_remove_dbs' for 'mongo_set' #IOWOPS-13114
+- added more information about errors during pre-removing databases #IOWOPS-13114
+- Invoker.execute returns exit code. Added parameter force to it. #IOWOPS-13114
+
 0.4.4 (2018-11-13)
 ------------------
 - excluded service database 'db' from output #IOWOPS-13114

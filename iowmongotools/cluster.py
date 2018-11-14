@@ -61,7 +61,7 @@ class Cluster(object):
         self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
         self.name = name
 
-    def generate_commands(self):
+    def generate_commands(self, pre_remove_dbs=None, force=False):
         """ :returns dict of lists of commands """
         sharded_dbs = (db for db, params in self._declared_config['databases'].items() if params['partitioned'])
         commands = {
@@ -73,25 +73,48 @@ class Cluster(object):
                                 sharded_dbs],
             'shard_collections': [app.Command(self._api.admin.command, ('shardCollection', name), params,
                                               'enabling sharding for collection %s by %s' % (name, params))
-                                  for name, params in self._declared_config['collections'].items()],
-            'drop_test_database': app.Command(self.drop_test_database,
-                                               description='removing database test from each shard')
+                                  for name, params in self._declared_config['collections'].items()]
         }
+        if isinstance(pre_remove_dbs, (list, tuple)) and len(pre_remove_dbs):
+            commands.update({'pre_remove_dbs': app.Command(self.drop_databases_from_shards, (pre_remove_dbs, force),
+                                                           description='removing databases {} from each shard'.format(
+                                                               pre_remove_dbs))})
         return commands
 
-    def drop_test_database(self):
+    def drop_databases_from_shards(self, dbs, force=False):
         pool = ThreadPool(processes=min(len(self._declared_config['shards']), 5))
-        results = [pool.apply_async(self.remove_test_database_from_shard, (shard,)) for shard in
+        results = [pool.apply_async(self.remove_databases_from_shard, (shard, dbs, force)) for shard in
                    self._declared_config['shards']]
+        err = 0
         for result in results:
-            result.get()
+            err += result.get()
+        return err
 
     @staticmethod
-    def remove_test_database_from_shard(shard):
-        _api = pymongo.MongoClient('mongodb://%s' % shard)
-        logger.debug('Dropping test database on %s', shard)
-        _api.drop_database('test')
-        _api.close()
+    def remove_databases_from_shard(shard, dbs, force=False):
+        dbs = frozenset(dbs)
+        _api = pymongo.MongoClient('mongodb://%s' % shard, connect=False)
+        try:
+            actual_dbs = frozenset(_api.database_names())
+            surplus_dbs = actual_dbs - (dbs | {'admin', 'local'})
+            if surplus_dbs and not force:
+                logger.error('There is local database %s at %s. Consider to add it to --pre_remove_dbs.',
+                             ', '.join(surplus_dbs), shard)
+                return 1
+            for db in dbs:
+                if db in actual_dbs:
+                    logger.debug('Dropping database %s at %s', db, shard)
+                    _api.drop_database(db)
+                else:
+                    logger.debug('Database %s doesn\'t exist at %s', db, shard)
+                    _api.close()
+        except Exception as err:
+            logger.error('%s at %s', err, shard)
+            return 1
+        else:
+            return 0
+        finally:
+            _api.close()
 
     @property
     def actual_config(self):

@@ -146,12 +146,14 @@ class Invoker(object):
             raise TypeError("Instanses of '%s' class are allowed only" % Command.__name__)
         self.registry.append(command)
 
-    def execute(self):
+    def execute(self, force=False):
         errors = 0
         for command in self.registry:
             result = command.execute()
             if result is False or result != 0:
                 errors += 1
+                if not force:
+                    break
         return errors
 
     def print(self):

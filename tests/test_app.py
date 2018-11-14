@@ -207,7 +207,7 @@ def test_class_invoker():
     # adding list of Commands
     invoker.add(commands[1:])
     assert len(invoker.registry) == 3
-    invoker.execute()
+    invoker.execute(force=True)
     assert sample_dict['test2'] == 'update_dict2'
     # adding garbage instead of Command
     with pytest.raises(TypeError) as excinfo:
