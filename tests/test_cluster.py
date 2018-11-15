@@ -74,6 +74,9 @@ def test_generate_commands():
         ('shardCollection', 'project.uuidh')
     ]
     kwargs_of_all_commands = [
+        {'name': 'mongo-gce-or-1'},
+        {'name': 'mongo-gce-or-2'},
+        {'name': 'mongo-gce-or-3'},
         {'key': {'_id': 'hashed'}, 'unique': False},
         {'key': {'_id': 'hashed'}, 'unique': False}]
     print(actual_args)

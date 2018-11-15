@@ -112,7 +112,7 @@ class SettingsCli(Settings):
 
 class Command(object):
 
-    def __init__(self, kallable, args=tuple(), kwargs=dict(), description=str()):
+    def __init__(self, kallable, args=tuple(), kwargs=dict(), description=str(), good_result=0):
         if not hasattr(kallable, '__call__'):
             raise TypeError("%s executes only callable objects" % Command.__name__)
         if not isinstance(args, (tuple, list)):
@@ -123,6 +123,7 @@ class Command(object):
         self.args = args
         self.kwargs = kwargs
         self.description = description
+        self.good_result = good_result
 
     def execute(self):
         logger.info(self)
@@ -149,8 +150,9 @@ class Invoker(object):
     def execute(self, force=False):
         errors = 0
         for command in self.registry:
-            result = command.execute()
-            if result is False or result != 0:
+            res = command.execute()
+            logger.warning(res)
+            if res != command.good_result:
                 errors += 1
                 if not force:
                     break

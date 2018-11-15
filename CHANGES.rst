@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.6 (2018-11-15)
+------------------
+- added proper good results to commands in Cluster.generate_commands #IOWOPS-13114
+- added check for good result in Invoker.execute. #IOWOPS-13114
+
 0.4.5 (2018-11-14)
 ------------------
 - added parameter 'pre_remove_dbs' for 'mongo_set' #IOWOPS-13114

@@ -65,14 +65,16 @@ class Cluster(object):
         """ :returns dict of lists of commands """
         sharded_dbs = (db for db, params in self._declared_config['databases'].items() if params['partitioned'])
         commands = {
-            'add_shards': [app.Command(self._api.admin.command, ('addshard', shard),
-                                       description='adding shard %s to %s' % (shard, self.name)) for shard in
+            'add_shards': [app.Command(self._api.admin.command, ('addshard', shard), {'name': shard.split('.')[0]},
+                                       'adding shard %s to %s' % (shard, self.name),
+                                       {'shardAdded': shard.split('.')[0], 'ok': 1.0}) for shard in
                            self._declared_config['shards']],
             'enable_sharding': [app.Command(self._api.admin.command, ('enableSharding', db_name),
-                                            description='enabling sharding for database %s' % db_name) for db_name in
-                                sharded_dbs],
+                                            description='enabling sharding for database %s' % db_name,
+                                            good_result={'ok': 1.0}) for db_name in sharded_dbs],
             'shard_collections': [app.Command(self._api.admin.command, ('shardCollection', name), params,
-                                              'enabling sharding for collection %s by %s' % (name, params))
+                                              'enabling sharding for collection %s by %s' % (name, params),
+                                              {'collectionsharded': name, 'ok': 1.0})
                                   for name, params in self._declared_config['collections'].items()]
         }
         if isinstance(pre_remove_dbs, (list, tuple)) and len(pre_remove_dbs):
