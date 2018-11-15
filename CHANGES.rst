@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.7 (2018-11-15)
+------------------
+- removed debug info from Invoker.execute. #IOWOPS-13114
+
 0.4.6 (2018-11-15)
 ------------------
 - added proper good results to commands in Cluster.generate_commands #IOWOPS-13114

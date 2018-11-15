@@ -150,9 +150,7 @@ class Invoker(object):
     def execute(self, force=False):
         errors = 0
         for command in self.registry:
-            res = command.execute()
-            logger.warning(res)
-            if res != command.good_result:
+            if command.execute() != command.good_result:
                 errors += 1
                 if not force:
                     break
