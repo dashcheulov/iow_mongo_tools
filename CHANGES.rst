@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.8 (2018-11-15)
+------------------
+- check 'pre_remove_dbs' of 'mongo_set' for emptiness. #IOWOPS-13114
+- 'pre_remove_dbs' is empty by default now. #IOWOPS-13114
+
 0.4.7 (2018-11-15)
 ------------------
 - removed debug info from Invoker.execute. #IOWOPS-13114
