@@ -61,7 +61,7 @@ class Cluster(object):
         self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
         self.name = name
 
-    def generate_commands(self, pre_remove_dbs=None, force=False):
+    def generate_commands(self, pre_remove_dbs=(), force=False):
         """ :returns dict of lists of commands """
         sharded_dbs = (db for db, params in self._declared_config['databases'].items() if params['partitioned'])
         commands = {
@@ -75,12 +75,12 @@ class Cluster(object):
             'shard_collections': [app.Command(self._api.admin.command, ('shardCollection', name), params,
                                               'enabling sharding for collection %s by %s' % (name, params),
                                               {'collectionsharded': name, 'ok': 1.0})
-                                  for name, params in self._declared_config['collections'].items()]
+                                  for name, params in self._declared_config['collections'].items()],
+            'pre_remove_dbs': app.Command(self.drop_databases_from_shards, (pre_remove_dbs, force),
+                                          description='{} databases {} on each mongod'.format(
+                                              'checking for existing' if not pre_remove_dbs else 'removing',
+                                              ', '.join(pre_remove_dbs)))
         }
-        if isinstance(pre_remove_dbs, (list, tuple)) and len(pre_remove_dbs):
-            commands.update({'pre_remove_dbs': app.Command(self.drop_databases_from_shards, (pre_remove_dbs, force),
-                                                           description='removing databases {} from each shard'.format(
-                                                               pre_remove_dbs))})
         return commands
 
     def drop_databases_from_shards(self, dbs, force=False):

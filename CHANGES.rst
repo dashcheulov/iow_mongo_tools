@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.4.9 (2018-11-15)
+------------------
+- added mandatory check of exiting databases on mongod in 'mongo_set'. #IOWOPS-13114
+
 0.4.8 (2018-11-15)
 ------------------
 - check 'pre_remove_dbs' of 'mongo_set' for emptiness. #IOWOPS-13114
