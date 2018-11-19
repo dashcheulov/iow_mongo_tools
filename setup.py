@@ -31,7 +31,8 @@ setup(
         'console_scripts': [
             'mongo_check=iowmongotools:MongoCheckerCli.entry',
             'mongo_set=iowmongotools:MongoSetCli.entry',
-            'mongo_clone=iowmongotools:MongoCloneCli.entry'
+            'mongo_clone=iowmongotools:MongoCloneCli.entry',
+            'mongo_upload=iowmongotools:MongoUploadCli.entry',
         ],
     },
 )

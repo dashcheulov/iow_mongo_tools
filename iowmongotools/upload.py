@@ -7,11 +7,12 @@ import glob
 import subprocess
 import gzip
 import shutil
-import threading
+import time
+from threading import RLock
 import yaml
 from copy import copy
-from abc import abstractmethod
-from iowmongotools import app
+from multiprocessing import Pool
+from iowmongotools import app, cluster, fs
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -47,11 +48,12 @@ def decompress_file(src, dst_dir):
     return dst
 
 
-class DB(object):
+class FileDB(object):
     """ Operates with persistent storage of metadata """
     path = None
     __data = {}
     _flushed = True
+    lock = RLock()
 
     @classmethod
     def load(cls, path=None):
@@ -71,10 +73,11 @@ class DB(object):
     def flush(cls):
         """ Writes content of property __data to file only if __data is modified """
         if not cls._flushed:
-            logger.debug('Writting metadata to %s', cls.path)
-            with open(cls.path, 'w') as outfile:
-                yaml.safe_dump(cls.__data, outfile, default_flow_style=False)
-            cls._flushed = True
+            with cls.lock:
+                logger.debug('Writting metadata to %s', cls.path)
+                with open(cls.path, 'w') as outfile:
+                    yaml.safe_dump(cls.__data, outfile, default_flow_style=False)
+                cls._flushed = True
 
     def __init__(self, name, initial=None):
         self.name = name
@@ -86,7 +89,7 @@ class DB(object):
     def update(self, item, val):
         """ Update value of item. """
         self.__data[self.name].update({item: val})
-        DB._flushed = False
+        FileDB._flushed = False
 
     def get(self, item):
         """ :return item from dict _data """
@@ -96,7 +99,7 @@ class DB(object):
 class SegmentFile(object):  # pylint: disable=too-few-public-methods
     """ Represents file containing segments """
 
-    def __init__(self, path, config, processor):
+    def __init__(self, path, source):
         """
         :type path: str
         :param path: path to file
@@ -145,10 +148,9 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             processed = Flag('processed', set())  # set of clusters, in which uploading succeed
 
         self.path = path
-        self.config = config
-        self.processor = processor
+        self.source = source
         self.name = os.path.basename(self.path).split('.')[0]
-        Flags.db = DB(self.name)
+        Flags.db = FileDB(self.name)
         self.flags = Flags()
         self.tmp_file = self.path
         self.err_count = 0
@@ -215,17 +217,27 @@ class TmpSegmentFile(object):  # pylint: disable=too-few-public-methods
             os.remove(self._obj.tmp_file)
 
 
-class Uploader(app.App):
+class FileWatcher(fs.EventHandler):
+
+    def on_file_discovered(self, source, path):
+        logger.debug('%s discovered %s. Put in queue', source, path)
+        self.queue.put(SegmentFile(path, source))
+        self.items_ready.set()
+
+
+class Uploader(app.App, fs.EventHandler):
     def __init__(self):
         super().__init__()
-        DB.load(self.config.db_path)
+        fs.EventHandler.__init__(self)
+        self.pool = None
+        self.results = []
+        FileDB.load(self.config.db_path)
 
     @property
     def default_config(self):
         config = super().default_config
         config.update({
-            'clusters': (('or', 'sc', 'eu', 'jp'), 'Set of a designation of clusters.'),
-            'upload_dir': ('upload', 'Directory with incoming files'),
+            'upload_dir': ('/tmp', 'Directory with incoming files'),
             'inprog_dir': ('inprog_dir', 'Temporary directory with files being processed.'),
             'invalid_dir': ('invalid_dir',),
             'db_path': ('db.yaml', 'Path to file containing state of uploading.'),
@@ -234,28 +246,58 @@ class Uploader(app.App):
         return config
 
     def run(self):
-        files = [SegmentFile(filename, self.config, self.processor) for filename in
-                 glob.glob(os.path.join(self.config.upload_dir, '*')) if
-                 os.path.isfile(filename)]
-        err_count = 0
-        clusters = frozenset(self.config.clusters)
-        for segfile in sorted(files, reverse=True):
-            if not (self.config.reprocess_invalid and segfile.flags.invalid) and clusters == (
-                    segfile.flags.processed | segfile.flags.invalid):
-                continue
-            threads = []
-            with TmpSegmentFile(segfile):
-                for cluster in clusters:
-                    if (cluster in segfile.flags.processed) or (
-                            not self.config.reprocess_invalid and (cluster in segfile.flags.invalid)):
-                        continue
-                    threads.append(threading.Thread(target=segfile.process, kwargs={'cluster': cluster}))
-                    threads[-1].start()
-                for thread in threads:
-                    thread.join()
-            err_count += segfile.err_count
-        return err_count
+        if not hasattr(self.config, 'clusters'):
+            logger.error('Please provide cluster_config.yaml. See --help.')
+            return 1
+        errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
+        self.pool = Pool(processes=len(cluster.Cluster.objects))
+        s = time.time()
+        file_watcher = FileWatcher()
+        fs.LocalFilesObserver(file_watcher, self.config.upload_dir)
+        file_watcher.items_ready.wait()
+        self.consume_queue(file_watcher.queue)
+        while self.results:
+            result_ready = False
+            while not result_ready:  # polling of results, multiprocessing.Pool doesn't provide such ability
+                time.sleep(0.5)
+                for result in self.results:
+                    if result.ready():
+                        errors += result.get()
+                        self.results.remove(result)
+                        result_ready = True
+                self.consume_queue(file_watcher.queue)
+            if not self.results:
+                file_watcher.items_ready.wait()
+            self.consume_queue(file_watcher.queue)
+        logger.info('Working time %s', time.time() - s)
+        return errors
 
-    @abstractmethod
-    def processor(self, filename, cluster, config):
-        raise NotImplementedError('You should implement this')
+    def consume_queue(self, queue):
+        while not queue.empty():
+            self.results += [self.pool.apply_async(self.process_file, (cl_name, queue.get())) for cl_name, _ in
+                             cluster.Cluster.objects.items()]
+
+        # for segfile in sorted(files, reverse=True):
+        #     if not (self.config.reprocess_invalid and segfile.flags.invalid) and clusters == (
+        #             segfile.flags.processed | segfile.flags.invalid):
+        #         continue
+        #     threads = []
+        #     with TmpSegmentFile(segfile):
+        #         for cluster in clusters:
+        #             if (cluster in segfile.flags.processed) or (
+        #                     not self.config.reprocess_invalid and (cluster in segfile.flags.invalid)):
+        #                 continue
+        #             threads.append(threading.Thread(target=segfile.process, kwargs={'cluster': cluster}))
+        #             threads[-1].start()
+        #         for thread in threads:
+        #             thread.join()
+        #     err_count += segfile.err_count
+        # return err_count
+
+    @staticmethod
+    def process_file(cluster_name, segfile):
+        cl = cluster.Cluster.objects[cluster_name]
+        import random
+        time.sleep(random.uniform(0.1, 1))
+        logger.info('%s %s of size %s', cl.name, segfile.name, os.path.getsize(segfile.path))
+        return 1

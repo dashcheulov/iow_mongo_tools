@@ -212,4 +212,4 @@ def test_class_invoker():
     # adding garbage instead of Command
     with pytest.raises(TypeError) as excinfo:
         invoker.add(sample_dict)
-    assert str(excinfo.value) == 'Instanses of \'Command\' class are allowed only'
+    assert str(excinfo.value) == 'Instances of \'Command\' class are allowed only'

@@ -5,7 +5,7 @@ __status__ = "Pre-Alpha"
 
 import logging
 from multiprocessing.pool import ThreadPool
-from iowmongotools import app, cluster
+from iowmongotools import app, cluster, upload
 
 logger = logging.getLogger(__name__)
 
@@ -125,3 +125,7 @@ class MongoCloneCli(app.AppCli):
         else:
             return invoker.execute()
         return 0
+
+
+class MongoUploadCli(upload.Uploader, app.AppCli):
+    pass

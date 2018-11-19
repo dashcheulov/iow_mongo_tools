@@ -143,8 +143,8 @@ class Invoker(object):
             for cmd in command:
                 self.add(cmd)
             return
-        if not issubclass(command.__class__, Command):
-            raise TypeError("Instanses of '%s' class are allowed only" % Command.__name__)
+        if not isinstance(command, Command):
+            raise TypeError("Instances of '%s' class are allowed only" % Command.__name__)
         self.registry.append(command)
 
     def execute(self, force=False):
