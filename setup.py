@@ -24,7 +24,7 @@ setup(
     ],
     keywords='mongo iow',
     packages=find_packages(),
-    install_requires=['pymongo>=3.5.1', 'pyaml'],
+    install_requires=['pymongo>=3.5.1'],
     setup_requires=['pytest-runner'],
     tests_require=['pytest', 'pyaml', 'mongomock'],
     entry_points={
