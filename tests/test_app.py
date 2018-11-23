@@ -123,7 +123,7 @@ def test_class_settingscli_with_arguments(tmpdir, monkeypatch):
                                           'list': ['one', 'two']}
 
 
-def test_class_settingscli_load_cluster_config_through_argument(monkeypatch, tmpdir):
+def test_class_settingsclicluster_load_cluster_config_through_argument(monkeypatch, tmpdir):
     cluster_config = tmpdir.join('tmp_cluster_config.yaml')
     cluster_config.write('''
     aws-va:
@@ -138,7 +138,7 @@ def test_class_settingscli_load_cluster_config_through_argument(monkeypatch, tmp
                                                                                 '--cluster_config',
                                                                                 str(cluster_config.realpath())
                                                                             ],))
-    settings_instance = app.SettingsCli(defaults)
+    settings_instance = app.SettingCliCluster(defaults)
     assert settings_instance.property == 'sample'
     assert settings_instance.cluster_config['aws-va'] == {'mongos': ['mongos1:27017']}
     assert settings_instance.clusters == {'aws-va', 'gce-eu'}

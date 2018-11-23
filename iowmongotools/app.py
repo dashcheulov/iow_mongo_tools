@@ -34,8 +34,10 @@ class Settings(object):
             logger.debug('Loading %s default settings', len(defaults))
             self.description = {}
             self._load_defaults(defaults)
+        self.tmp = dict()
         self.load()
         delattr(self, 'description')
+        delattr(self, 'tmp')
 
     def _load_defaults(self, defaults):
         for key, content in defaults.items():  # content is tuple of value and description
@@ -81,13 +83,7 @@ class SettingsCli(Settings):
         config = self.read_config_file(self.config_file)
         if config:
             self.__dict__.update(config)
-        parser.add_argument("--{}".format('cluster_config'), default=getattr(self, 'cluster_config', None),
-                            help='Path to yaml file containing description of clusters')
-        parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
-        cluster_config = self.read_config_file(self.cluster_config)
-        if cluster_config:
-            parser.add_argument("--{}".format('clusters'), default=[c for c in cluster_config.keys()],
-                                help='Cluster names to be processed', nargs='*')
+        exclusions = self.extra_run(parser, argv)
         for key, value in self.__dict__.items():
             if not self.description.get(key):
                 continue
@@ -99,15 +95,50 @@ class SettingsCli(Settings):
                                     help=self.description.get(key))
             elif isinstance(value, (list, tuple, set, frozenset)):
                 parser.add_argument("--{}".format(key), default=value, nargs='*', help=self.description.get(key))
-            elif key not in ('config_file', 'description', 'cluster_config'):
+            elif key not in ('config_file', 'description', *exclusions):
                 parser.add_argument("--{}".format(key), default=value, help=self.description.get(key))
         parser.parse_args(argv, self)
-        if cluster_config:
-            self.cluster_config = cluster_config
+        self.cleanup()
+        if not getattr(self, 'config_file'):
+            delattr(self, 'config_file')
+
+    def extra_run(self, parser, argv):
+        return ()
+
+    def cleanup(self):
+        pass
+
+
+class SettingCliCluster(SettingsCli):
+
+    def extra_run(self, parser, argv):
+        return self.add_clusters(parser, argv)
+
+    def cleanup(self):
+        if self.tmp['cluster_config']:
+            self.cluster_config = self.tmp['cluster_config']
             self.clusters = set(self.clusters)
-        for attr in ('config_file', 'cluster_config'):
-            if not getattr(self, attr):
-                delattr(self, attr)
+        if not getattr(self, 'cluster_config'):
+            delattr(self, 'cluster_config')
+
+    def add_clusters(self, parser, argv):
+        parser.add_argument("--{}".format('cluster_config'), default=getattr(self, 'cluster_config', None),
+                            help='Path to yaml file containing description of clusters')
+        parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
+        self.tmp['cluster_config'] = self.read_config_file(self.cluster_config)
+        if self.tmp['cluster_config']:
+            parser.add_argument("--{}".format('clusters'), default=[c for c in self.tmp['cluster_config'].keys()],
+                                help='Cluster names to be processed', nargs='*')
+        return 'cluster_config',
+
+
+class SettingCliUploader(SettingCliCluster):
+
+    def extra_run(self, parser, argv):
+        if getattr(self, 'upload'):
+            parser.add_argument("--{}".format('providers'), default=[p for p in self.upload.keys()],
+                            help='List of providers of segments for processing', nargs='*')
+        return self.add_clusters(parser, argv)
 
 
 class Command(object):

@@ -38,7 +38,7 @@ def decompress_file(src, dst_dir):
     :returns abs path of decompressed file
     """
     if not src.endswith('.gz'):
-        raise (ValueError, "%s unknown suffix -- ignored" % src)
+        raise ValueError("%s unknown suffix -- ignored" % src)
     dst = os.path.join(dst_dir, os.path.basename(src.rsplit('.gz', 1)[0]))
     logger.info("Decompressing %s to %s", src, dst)
     with gzip.open(src, 'rb') as f_in:
@@ -99,7 +99,7 @@ class FileDB(object):
 class SegmentFile(object):  # pylint: disable=too-few-public-methods
     """ Represents file containing segments """
 
-    def __init__(self, path, source):
+    def __init__(self, path, provider, config):
         """
         :type path: str
         :param path: path to file
@@ -148,11 +148,12 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             processed = Flag('processed', set())  # set of clusters, in which uploading succeed
 
         self.path = path
-        self.source = source
+        self.provider = provider
         self.name = os.path.basename(self.path).split('.')[0]
-        Flags.db = FileDB(self.name)
-        self.flags = Flags()
+        # Flags.db = FileDB(self.name)
+        # self.flags = Flags()
         self.tmp_file = self.path
+        self.config = config
         self.err_count = 0
 
     def __gt__(self, other):
@@ -217,12 +218,31 @@ class TmpSegmentFile(object):  # pylint: disable=too-few-public-methods
             os.remove(self._obj.tmp_file)
 
 
-class FileWatcher(fs.EventHandler):
+class FileEmitter(fs.EventHandler):
 
-    def on_file_discovered(self, source, path):
-        logger.debug('%s discovered %s. Put in queue', source, path)
-        self.queue.put(SegmentFile(path, source))
+    def __init__(self, provider, upload_config):
+        super().__init__()
+        self.provider = provider
+        self.delivery_config = upload_config.pop('delivery')
+        self.config = upload_config
+        self.start_observers()
+
+    def on_file_discovered(self, path):
+        logger.debug('%s is discovered. Put in queue', path)
+        self.queue.put(SegmentFile(path, self.provider, self.config))
         self.items_ready.set()
+
+    def start_observers(self):
+        atleast_one_delivery_exists = False
+        for delivery, config in self.delivery_config.items():
+            if delivery not in fs.NAMES_MAP.keys():
+                logger.warning('Don\'t know how to deliver \'%s\' from \'%s\'. Ignoring.', self.provider, delivery)
+                continue
+            logger.debug('Starting %s watcher for %s.', delivery, self.provider)
+            getattr(fs, fs.NAMES_MAP[delivery])(self, config)
+            atleast_one_delivery_exists = True
+        if not atleast_one_delivery_exists:
+            raise ValueError("There is no known delivery for %s. Review config." % self.provider)
 
 
 class Uploader(app.App, fs.EventHandler):
@@ -231,31 +251,34 @@ class Uploader(app.App, fs.EventHandler):
         fs.EventHandler.__init__(self)
         self.pool = None
         self.results = []
-        FileDB.load(self.config.db_path)
+        # FileDB.load(self.config.db_path)
 
     @property
     def default_config(self):
         config = super().default_config
         config.update({
-            'upload_dir': ('/tmp', 'Directory with incoming files'),
-            'inprog_dir': ('inprog_dir', 'Temporary directory with files being processed.'),
-            'invalid_dir': ('invalid_dir',),
+            'upload': (dict(),),
             'db_path': ('db.yaml', 'Path to file containing state of uploading.'),
             'reprocess_invalid': (False, 'Whether reprocess files were not uploaded previously'),
         })
         return config
 
     def run(self):
+        s = time.time()
         if not hasattr(self.config, 'clusters'):
             logger.error('Please provide cluster_config.yaml. See --help.')
             return 1
+        for provider in self.config.upload.copy().keys():
+            if provider not in self.config.providers:
+                self.config.upload.pop(provider)
+        if not self.config.upload:
+            logger.error('Uploading isn\'t configured. Fill in section \'upload\' in config. Set \'--providers\'.')
+            return 1
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
         self.pool = Pool(processes=len(cluster.Cluster.objects))
-        s = time.time()
-        file_watcher = FileWatcher()
-        fs.LocalFilesObserver(file_watcher, self.config.upload_dir)
-        file_watcher.items_ready.wait()
-        self.consume_queue(file_watcher.queue)
+        file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
+        self.wait_for_items(file_emitters)
+        self.consume_queue(file_emitters)
         while self.results:
             result_ready = False
             while not result_ready:  # polling of results, multiprocessing.Pool doesn't provide such ability
@@ -265,39 +288,33 @@ class Uploader(app.App, fs.EventHandler):
                         errors += result.get()
                         self.results.remove(result)
                         result_ready = True
-                self.consume_queue(file_watcher.queue)
+                self.consume_queue(file_emitters)
             if not self.results:
-                file_watcher.items_ready.wait()
-            self.consume_queue(file_watcher.queue)
-        logger.info('Working time %s', time.time() - s)
+                self.wait_for_items(file_emitters)
+            self.consume_queue(file_emitters)
+        logger.info('Total working time is %s', time.time() - s)
         return errors
 
-    def consume_queue(self, queue):
-        while not queue.empty():
-            self.results += [self.pool.apply_async(self.process_file, (cl_name, queue.get())) for cl_name, _ in
-                             cluster.Cluster.objects.items()]
+    @staticmethod
+    def wait_for_items(emitter_objects, timeout=10800, atleast_one=False):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            results = [obj.items_ready.is_set() for obj in emitter_objects]
+            if atleast_one and any(results) or all(results):
+                return True
+            time.sleep(0.5)
+        raise TimeoutError('Reached timeout while waiting for files.')
 
-        # for segfile in sorted(files, reverse=True):
-        #     if not (self.config.reprocess_invalid and segfile.flags.invalid) and clusters == (
-        #             segfile.flags.processed | segfile.flags.invalid):
-        #         continue
-        #     threads = []
-        #     with TmpSegmentFile(segfile):
-        #         for cluster in clusters:
-        #             if (cluster in segfile.flags.processed) or (
-        #                     not self.config.reprocess_invalid and (cluster in segfile.flags.invalid)):
-        #                 continue
-        #             threads.append(threading.Thread(target=segfile.process, kwargs={'cluster': cluster}))
-        #             threads[-1].start()
-        #         for thread in threads:
-        #             thread.join()
-        #     err_count += segfile.err_count
-        # return err_count
+    def consume_queue(self, emitter_objects):
+        for obj in emitter_objects:
+            while not obj.queue.empty():
+                self.results += [self.pool.apply_async(self.process_file, (cl_name, obj.queue.get())) for cl_name, _ in
+                                 cluster.Cluster.objects.items()]
 
     @staticmethod
     def process_file(cluster_name, segfile):
         cl = cluster.Cluster.objects[cluster_name]
         import random
         time.sleep(random.uniform(0.1, 1))
-        logger.info('%s %s of size %s', cl.name, segfile.name, os.path.getsize(segfile.path))
+        logger.info('%s %s of size %s from %s', cl.name, segfile.name, os.path.getsize(segfile.path), segfile.provider)
         return 1

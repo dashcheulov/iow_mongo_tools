@@ -100,7 +100,7 @@ class Cluster(object):
             actual_dbs = frozenset(_api.database_names())
             surplus_dbs = actual_dbs - (dbs | {'admin', 'local'})
             if surplus_dbs and not force:
-                logger.error('There is local database %s at %s. Consider to add it to --pre_remove_dbs.',
+                logger.error('There is local database %s at %s. Consider to add it to --pre_remove_db.',
                              ', '.join(surplus_dbs), shard)
                 return 1
             for db in dbs:

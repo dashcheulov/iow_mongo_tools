@@ -8,6 +8,10 @@ from multiprocessing import Process, Event, SimpleQueue
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
+NAMES_MAP = {
+    'local': 'LocalFilesObserver'
+}
+
 
 class EventHandler(object):
 
@@ -15,20 +19,20 @@ class EventHandler(object):
         self.items_ready = Event()
         self.queue = SimpleQueue()
 
-    def on_modify(self, source, path):
+    def on_modify(self, path):
         logger.warning('Size of %s is changing (%s). Probably file is being uploaded now. Waiting for it.',
                        path, os.path.getsize(path))
         self.items_ready.clear()
 
-    def on_file_discovered(self, source, path):
+    def on_file_discovered(self, path):
         self.items_ready.set()
 
-    def dispatch(self, source, path, type_name):
+    def dispatch(self, path, type_name):
         method_map = {
             'IN_CLOSE_WRITE': 'on_file_discovered',
             'IN_MODIFY': 'on_modify',
         }
-        getattr(self, method_map[type_name])(source, path)
+        getattr(self, method_map[type_name])(path)
 
 
 class Observer(Process):
@@ -45,23 +49,27 @@ class Observer(Process):
 
 class LocalFilesObserver(Observer):
 
-    def __init__(self, handler, path, recursive=False, polling_interval=5):
-        self.path = path
-        self.recursive = recursive
+    def __init__(self, handler, config):
+        self.path = config['path']
+        if not os.path.exists(self.path):
+            raise FileNotFoundError('%s doesn\'t exist.' % self.path)
+        self.filename = config.get('filename', '**')
+        self.recursive = config.get('recursive', False)
+        self.polling_interval = config.get('polling_interval', 5)
         self._files_prev = set()
-        self.polling_interval = polling_interval
         super().__init__(handler)
 
     @property
     def files(self):
-        return set(filename for filename in glob.glob(os.path.join(self.path, '**'), recursive=self.recursive) if
-                   os.path.isfile(filename))
+        return set(
+            filename for filename in glob.glob(os.path.join(self.path, self.filename), recursive=self.recursive) if
+            os.path.isfile(filename))
 
     def get_new_file(self, check_for_changing=True):
         files = self.files
         new_files = files.difference(self._files_prev)
         if not new_files:
-            logger.debug('No new files')
+            logger.debug('No new files in %s', self.path)
             return ()
         self._files_prev = files
         if not check_for_changing:
@@ -79,13 +87,12 @@ class LocalFilesObserver(Observer):
                         yield fl
                     else:
                         files[fl] = os.path.getsize(fl)
-                        self.observable.dispatch(self.__class__.__name__, fl, 'IN_MODIFY')
+                        self.observable.dispatch(fl, 'IN_MODIFY')
 
     def run(self):
-        logger.debug('Starting watcher of local filesystem.')
         while True:
             self.observable.items_ready.clear()
             for path in self.get_new_file():
-                self.observable.dispatch(self.__class__.__name__, path, 'IN_CLOSE_WRITE')
+                self.observable.dispatch(path, 'IN_CLOSE_WRITE')
             self.observable.items_ready.set()
             time.sleep(self.polling_interval)
