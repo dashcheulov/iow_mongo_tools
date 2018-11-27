@@ -2,6 +2,11 @@ from iowmongotools import app
 import pytest
 
 
+def test_human_to_seconds():
+    assert app.human_to_seconds("3D18h3m54s") == 324234
+    assert app.human_to_seconds("1Y") == 365 * 86400
+    assert app.human_to_seconds("30D") == 2592000
+
 def test_class_settings_with_only_defaults():
     defaults = {
         'property1': ('sample',), 'property2': (2, 'description'), 'property3': (None,),

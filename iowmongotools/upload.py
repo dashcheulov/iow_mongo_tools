@@ -3,13 +3,11 @@
 """ Imports segments to mongo """
 import os
 import logging
-import glob
+import re
 import subprocess
 import gzip
 import shutil
 import time
-from threading import RLock
-import yaml
 from copy import copy
 from multiprocessing import Pool
 from iowmongotools import app, cluster, fs
@@ -48,54 +46,6 @@ def decompress_file(src, dst_dir):
     return dst
 
 
-class FileDB(object):
-    """ Operates with persistent storage of metadata """
-    path = None
-    __data = {}
-    _flushed = True
-    lock = RLock()
-
-    @classmethod
-    def load(cls, path=None):
-        """ Reads db from file and updates to property __data """
-        if not cls.path:
-            if not path:
-                raise NameError('Please define DB.path')
-            cls.path = path
-        logger.debug('Reading metadata from %s', cls.path)
-        if not os.path.isfile(cls.path):
-            cls.__data = {}
-            return
-        with open(cls.path, 'r') as db_file:
-            cls.__data.update(yaml.safe_load(db_file) or {})
-
-    @classmethod
-    def flush(cls):
-        """ Writes content of property __data to file only if __data is modified """
-        if not cls._flushed:
-            with cls.lock:
-                logger.debug('Writting metadata to %s', cls.path)
-                with open(cls.path, 'w') as outfile:
-                    yaml.safe_dump(cls.__data, outfile, default_flow_style=False)
-                cls._flushed = True
-
-    def __init__(self, name, initial=None):
-        self.name = name
-        if initial and not isinstance(initial, dict):
-            logger.warning('Wrong value %s. Ignoring.', initial)
-        if name not in self.__data:
-            self.__data.update({name: initial or {}})
-
-    def update(self, item, val):
-        """ Update value of item. """
-        self.__data[self.name].update({item: val})
-        FileDB._flushed = False
-
-    def get(self, item):
-        """ :return item from dict _data """
-        return self.__data[self.name].get(item)
-
-
 class SegmentFile(object):  # pylint: disable=too-few-public-methods
     """ Represents file containing segments """
 
@@ -127,6 +77,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
 
         class Flag(object):  # pylint: disable=too-few-public-methods
             """ Descriptor of flag """
+
             def __init__(self, name_in_db, init_value=None):
                 self.name = name_in_db
                 self.init_value = init_value
@@ -177,45 +128,42 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             self.err_count += 1
 
 
-class TmpSegmentFile(object):  # pylint: disable=too-few-public-methods
-    """ Context for creating temporary processed file in inprog directory
-    :type obj: SegmentFile
+class Strategy(object):
 
-    :Example:
-    .. code-block:: python
+    def __init__(self, config):
+        if 'input' not in config or 'output' not in config:
+            raise AttributeError('Uploading strategy must have both sections \'input\' and \'output\'')
+        tsv_file_schema = config['input'].get('tsv_file', dict())
+        self.titles = list()
+        self.patterns = list()
+        for title, pattern in tsv_file_schema.items():
+            self.titles.append(title)
+            self.patterns.append(re.compile(pattern))
+        self.template_params = self.prepare_template_params(config['input'].get('templates', dict()))
 
-    segfile = SegmentFile(filename)
-    with TmpSegmentFile(segfile):
-        segfile.process(cluster)
-    """
+    @staticmethod
+    def prepare_template_params(config):
+        if 'hash_of_segments' not in config:
+            config['hash_of_segments'] = dict()
+        config['hash_of_segments']['expiration_ts'] = int(
+            time.time() + app.human_to_seconds(config['hash_of_segments'].pop('retention', '30D')))
+        if 'segment_separator' not in config['hash_of_segments']:
+            config['hash_of_segments']['segment_separator'] = ','
+        return config
 
-    def __init__(self, obj):
-        self._obj = obj
+    def get_hash_of_segments(self, segment_string):
+        config = self.template_params['hash_of_segments']
+        output = dict()
+        for segment in segment_string.split(config['segment_separator']):
+            output[segment] = config['expiration_ts']
+        return output
 
-    def __enter__(self):
-        if not os.path.isdir(self._obj.config.inprog_dir):
-            logger.info('%s doesn\'t exist. Creating it.', self._obj.config.inprog_dir)
-            os.mkdir(self._obj.config.inprog_dir)
-        try:
-            self._obj.tmp_file = decompress_file(self._obj.path, self._obj.config.inprog_dir)
-        except ValueError:
-            logger.info('Copying %s to %s', self._obj.name, self._obj.config.inprog_dir)
-            self._obj.tmp_file = shutil.copy(self._obj.path,
-                                             self._obj.config.inprog_dir)  # pylint: disable=assignment-from-no-return
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._obj.err_count:
-            if not os.path.isdir(self._obj.config.invalid_dir):
-                logger.info('%s doesn\'t exist. Creating it.', self._obj.config.invalid_dir)
-                os.mkdir(self._obj.config.invalid_dir)
-            logger.info('Moving invalid tmp file %s to %s', self._obj.name, self._obj.config.invalid_dir)
-            try:
-                shutil.move(self._obj.tmp_file, self._obj.config.invalid_dir)
-            except shutil.Error:
-                logger.warning('There is %s in %s already', self._obj.name, self._obj.config.invalid_dir)
-        else:
-            logger.info('Removing valid tmp file %s', self._obj.tmp_file)
-            os.remove(self._obj.tmp_file)
+    def get_setter(self, line):
+        line = line.split('\t')
+        dict_line = dict()
+        for index in range(len(self.titles)):
+            self.patterns[index].match(line[index])
+            dict_line[self.titles[index]] = line[index]
 
 
 class FileEmitter(fs.EventHandler):
@@ -251,7 +199,6 @@ class Uploader(app.App, fs.EventHandler):
         fs.EventHandler.__init__(self)
         self.pool = None
         self.results = []
-        # FileDB.load(self.config.db_path)
 
     @property
     def default_config(self):
@@ -281,7 +228,7 @@ class Uploader(app.App, fs.EventHandler):
         self.consume_queue(file_emitters)
         while self.results:
             result_ready = False
-            while not result_ready:  # polling of results, multiprocessing.Pool doesn't provide such ability
+            while not result_ready:  # polling of results
                 time.sleep(0.5)
                 for result in self.results:
                     if result.ready():

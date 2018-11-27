@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import subprocess
 import yaml
+import re
+from collections import OrderedDict
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +26,49 @@ def run_ext_command(args, title=''):
         for line in proc.stdout:
             logger.info('%s%s', prefix, line.strip())
     return proc.wait()
+
+
+def human_to_seconds(string):
+    """Convert internal string like 1M, 1Y3M, 3W to seconds.
+
+    :type string: str
+    :param string: Interval string like 1M, 1W, 1M3W4h2s...
+        (s => seconds,
+         m => minutes,
+         h => hours,
+         D => days,
+         W => weeks,
+         M => months,
+         Y => Years).
+
+    :rtype: int
+    :return: The conversion in seconds of string.
+    """
+    interval_dict = OrderedDict([("Y", 365 * 86400),  # 1 year
+                                 ("M", 30 * 86400),  # 1 month
+                                 ("W", 7 * 86400),  # 1 week
+                                 ("D", 86400),  # 1 day
+                                 ("h", 3600),  # 1 hour
+                                 ("m", 60),  # 1 minute
+                                 ("s", 1)])  # 1 second
+    interval_exc = "Bad interval format for {0}".format(string)
+
+    interval_regex = re.compile(
+        "^(?P<value>[0-9]+)(?P<unit>[{0}])".format("".join(interval_dict.keys())))
+    seconds = 0
+
+    while string:
+        match = interval_regex.match(string)
+        if match:
+            value, unit = int(match.group("value")), match.group("unit")
+            if int(value) and unit in interval_dict:
+                seconds += value * interval_dict[unit]
+                string = string[match.end():]
+            else:
+                raise Exception(interval_exc)
+        else:
+            raise Exception(interval_exc)
+    return seconds
 
 
 class Settings(object):
