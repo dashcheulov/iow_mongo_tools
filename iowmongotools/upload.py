@@ -182,17 +182,22 @@ class Strategy(object):
 
     @staticmethod
     def prepare_template_params(config):
-        if 'hash_of_segments' not in config:
-            config['hash_of_segments'] = dict()
-        config['hash_of_segments']['expiration_ts'] = int(
-            time.time() + app.human_to_seconds(config['hash_of_segments'].pop('retention', '30D')))
-        if 'segment_separator' not in config['hash_of_segments']:
-            config['hash_of_segments']['segment_separator'] = ','
+        config['hash_of_segments'] = {
+            'segment_separator': config.get('hash_of_segments', dict()).get('segment_separator', ','),
+            'expiration_ts': int(
+                time.time() + app.human_to_seconds(config.get('hash_of_segments', dict()).pop('retention', '30D'))),
+            'from_fields': config.get('hash_of_segments', dict()).get('from_fields', ['segments'])
+        }
         return config
 
-    def _get_hash_of_segments(self, segment_string):
+    def _get_hash_of_segments(self, fields):
+        """
+
+        :param fields: list of fields of line used in this function. Determined in parameter 'from_fields' in order.
+        :return: generated hash of segments
+        """
         output = dict()
-        for segment in segment_string.split(self.template_params['hash_of_segments']['segment_separator']):
+        for segment in fields[0].split(self.template_params['hash_of_segments']['segment_separator']):
             output[segment] = self.template_params['hash_of_segments']['expiration_ts']
         return output
 
@@ -220,11 +225,11 @@ class Strategy(object):
 
     def _dispatch_template(self, name, line):
         method_map = {
-            'hash_of_segments': (self._get_hash_of_segments, 'segments')
+            'hash_of_segments': self._get_hash_of_segments
         }
         if name not in method_map.keys():
             raise UnknownTemplate(name)
-        return method_map[name][0](line.get(method_map[name][1]))
+        return method_map[name]([v for k, v in line.items() if k in self.template_params[name]['from_fields']])
 
 
 class FileEmitter(fs.EventHandler):
@@ -333,7 +338,6 @@ class Uploader(app.App, fs.EventHandler):
     @staticmethod
     def process_file(cluster_name, segfile):
         cl = cluster.Cluster.objects[cluster_name]
-        logger.info('%s %s of type %s', cl.name, segfile.name, segfile.type)
         errors = 0
         ilb = 0  # counter of invalid lines in a batch
         batch = list()
