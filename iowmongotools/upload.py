@@ -8,8 +8,9 @@ import subprocess
 import gzip
 import shutil
 import time
+import mimetypes
 from copy import copy
-from multiprocessing import Pool
+from multiprocessing import Pool, Event
 from iowmongotools import app, cluster, fs
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -46,10 +47,33 @@ def decompress_file(src, dst_dir):
     return dst
 
 
+class BadLine(ValueError):
+    pass
+
+
+class UnknownTemplate(ValueError):
+    def __init__(self, name):
+        super().__init__('Template \'%s\' is unknown.' % name)
+
+
+class NoAnyDelivery(ValueError):
+    def __init__(self, name):
+        super().__init__('There is no known delivery for %s. Review config.' % name)
+
+
+class WrongFileType(ValueError):
+    def __init__(self, name, type, allowed_types):
+        super().__init__('Type of file \'%s\' is \'%s\', expected %s' % (name, type, ' or '.join(allowed_types)))
+
+
 class SegmentFile(object):  # pylint: disable=too-few-public-methods
     """ Represents file containing segments """
+    SEPARATORS_MAP = {
+        'text/tab-separated-values': '\t',
+        'text/csv': ','
+    }
 
-    def __init__(self, path, provider, config):
+    def __init__(self, path, provider, strategy):
         """
         :type path: str
         :param path: path to file
@@ -98,34 +122,41 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             invalid = Flag('invalid', set())  # set of clusters, in which uploading failed
             processed = Flag('processed', set())  # set of clusters, in which uploading succeed
 
+        if not isinstance(strategy, Strategy):
+            raise TypeError('strategy should be an instance of class Strategy')
         self.path = path
         self.provider = provider
         self.name = os.path.basename(self.path).split('.')[0]
-        # Flags.db = FileDB(self.name)
-        # self.flags = Flags()
+        self.strategy = strategy
+        self.type = mimetypes.guess_type(path)
+        if self.type[0] not in strategy.allowed_types:
+            raise WrongFileType(self.name, self.type[0], strategy.allowed_types)
         self.tmp_file = self.path
-        self.config = config
-        self.err_count = 0
+        self.line_cnt = {'invalid': 0, 'total': 0}
 
     def __gt__(self, other):
         return os.stat(self.path).st_mtime > os.stat(other.path).st_mtime
 
-    def process(self, cluster):
-        """ Method processing single segments file with method processor """
-        try:
-            exitcode = self.processor(self.tmp_file, cluster, self.config)
-        except Exception as err:  # pylint: disable=broad-except
-            logger.exception(err)
-            exitcode = 1
-            self.err_count += exitcode
-        if exitcode == 0:
-            logger.info('%s has been uploaded to cluster %s', self.name, cluster)
-            self.flags.processed |= {cluster}
-            self.flags.invalid -= {cluster}
+    def get_line(self):
+        if self.type[1] == 'gzip':
+            open_func = gzip.open
+            logger.debug('%s is type of %s. Opening with gzip.', self.name, self.type)
         else:
-            logger.error('%s has not been uploaded to cluster %s', self.name, cluster)
-            self.flags.invalid |= {cluster}
-            self.err_count += 1
+            open_func = open
+            logger.debug('%s is type of %s. Opening.', self.name, self.type)
+        with open_func(self.path, 'rt') as f_in:
+            line = f_in.readline()
+            while line:
+                yield line.strip()
+                line = f_in.readline()
+            logger.debug('Closing %s', self.name)
+
+    def get_setter(self, line_str):
+        try:
+            return self.strategy.get_setter(line_str.split(self.SEPARATORS_MAP[self.type[0]]),
+                                            self.strategy.input[self.type[0]])
+        except BadLine:
+            raise BadLine('Line \'%s\' is invalid.' % line_str)
 
 
 class Strategy(object):
@@ -133,13 +164,21 @@ class Strategy(object):
     def __init__(self, config):
         if 'input' not in config or 'output' not in config:
             raise AttributeError('Uploading strategy must have both sections \'input\' and \'output\'')
-        tsv_file_schema = config['input'].get('tsv_file', dict())
-        self.titles = list()
-        self.patterns = list()
-        for title, pattern in tsv_file_schema.items():
-            self.titles.append(title)
-            self.patterns.append(re.compile(pattern))
-        self.template_params = self.prepare_template_params(config['input'].get('templates', dict()))
+        self.allowed_types = frozenset(ft for ft in SegmentFile.SEPARATORS_MAP.keys() if ft in config['input'])
+        if not self.allowed_types:
+            raise AttributeError(
+                'Input must have at least one of type: %s' % ', '.join(SegmentFile.SEPARATORS_MAP.keys()))
+        self.input = dict()
+        for file_type in self.allowed_types:
+            self.input[file_type] = {'titles': [], 'patterns': []}
+            for title, pattern in config['input'][file_type].items():
+                self.input[file_type]['titles'].append(title)
+                self.input[file_type]['patterns'].append(re.compile(pattern))
+        self.output = config['output']
+        self.template_params = self.prepare_template_params(config.get('templates', dict()))
+        self.lines_in_batch = config.get('lines_in_batch', 1000)
+        self.threshold_invalid_lines_in_batch = config.get('threshold_invalid_lines_in_batch', 0.8)
+        self.template = re.compile(r'{{(.*)}}')
 
     @staticmethod
     def prepare_template_params(config):
@@ -151,19 +190,41 @@ class Strategy(object):
             config['hash_of_segments']['segment_separator'] = ','
         return config
 
-    def get_hash_of_segments(self, segment_string):
-        config = self.template_params['hash_of_segments']
+    def _get_hash_of_segments(self, segment_string):
         output = dict()
-        for segment in segment_string.split(config['segment_separator']):
-            output[segment] = config['expiration_ts']
+        for segment in segment_string.split(self.template_params['hash_of_segments']['segment_separator']):
+            output[segment] = self.template_params['hash_of_segments']['expiration_ts']
         return output
 
-    def get_setter(self, line):
-        line = line.split('\t')
+    def get_setter(self, line, config):
+        if len(config['titles']) != len(line):
+            raise BadLine
         dict_line = dict()
-        for index in range(len(self.titles)):
-            self.patterns[index].match(line[index])
-            dict_line[self.titles[index]] = line[index]
+        for index in range(len(config['titles'])):
+            if not config['patterns'][index].match(line[index]):  # validation
+                raise BadLine
+            dict_line[config['titles'][index]] = line[index]
+        return self._parse_output(self.output, dict_line)
+
+    def _parse_output(self, item, dict_line):
+        if isinstance(item, dict):
+            item = item.copy()
+            for key, value in item.items():
+                item[key] = self._parse_output(value, dict_line)
+            return item
+        if isinstance(item, str):
+            matched = self.template.match(item)
+            if matched:
+                return dict_line.get(matched.group(1)) or self._dispatch_template(matched.group(1), dict_line)
+        return item
+
+    def _dispatch_template(self, name, line):
+        method_map = {
+            'hash_of_segments': (self._get_hash_of_segments, 'segments')
+        }
+        if name not in method_map.keys():
+            raise UnknownTemplate(name)
+        return method_map[name][0](line.get(method_map[name][1]))
 
 
 class FileEmitter(fs.EventHandler):
@@ -171,14 +232,20 @@ class FileEmitter(fs.EventHandler):
     def __init__(self, provider, upload_config):
         super().__init__()
         self.provider = provider
+        self.errors = Event()
         self.delivery_config = upload_config.pop('delivery')
-        self.config = upload_config
+        self.strategy = Strategy(upload_config)
+        logger.debug('Loaded strategy for %s', provider)
         self.start_observers()
 
     def on_file_discovered(self, path):
         logger.debug('%s is discovered. Put in queue', path)
-        self.queue.put(SegmentFile(path, self.provider, self.config))
-        self.items_ready.set()
+        try:
+            self.queue.put(SegmentFile(path, self.provider, self.strategy))
+            self.items_ready.set()
+        except WrongFileType as err:
+            logger.error(err)
+            self.errors.set()
 
     def start_observers(self):
         atleast_one_delivery_exists = False
@@ -190,7 +257,7 @@ class FileEmitter(fs.EventHandler):
             getattr(fs, fs.NAMES_MAP[delivery])(self, config)
             atleast_one_delivery_exists = True
         if not atleast_one_delivery_exists:
-            raise ValueError("There is no known delivery for %s. Review config." % self.provider)
+            raise NoAnyDelivery(self.provider)
 
 
 class Uploader(app.App, fs.EventHandler):
@@ -221,6 +288,8 @@ class Uploader(app.App, fs.EventHandler):
         if not self.config.upload:
             logger.error('Uploading isn\'t configured. Fill in section \'upload\' in config. Set \'--providers\'.')
             return 1
+        mimetypes.init()
+        mimetypes.types_map.update(self.config.mime_types_map)
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
         self.pool = Pool(processes=len(cluster.Cluster.objects))
         file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
@@ -240,6 +309,9 @@ class Uploader(app.App, fs.EventHandler):
                 self.wait_for_items(file_emitters)
             self.consume_queue(file_emitters)
         logger.info('Total working time is %s', time.time() - s)
+        for file_emitter in file_emitters:
+            if file_emitter.errors.is_set():
+                errors += 1
         return errors
 
     @staticmethod
@@ -261,7 +333,26 @@ class Uploader(app.App, fs.EventHandler):
     @staticmethod
     def process_file(cluster_name, segfile):
         cl = cluster.Cluster.objects[cluster_name]
-        import random
-        time.sleep(random.uniform(0.1, 1))
-        logger.info('%s %s of size %s from %s', cl.name, segfile.name, os.path.getsize(segfile.path), segfile.provider)
-        return 1
+        logger.info('%s %s of type %s', cl.name, segfile.name, segfile.type)
+        errors = 0
+        ilb = 0  # counter of invalid lines in a batch
+        batch = list()
+        for line in segfile.get_line():
+            segfile.line_cnt['total'] += 1
+            try:
+                batch.append(segfile.get_setter(line))
+            except BadLine as err:
+                logger.warning('%s,%s. %s', segfile.name, segfile.line_cnt['total'], err)
+                ilb += 1
+            if segfile.line_cnt['total'] % segfile.strategy.lines_in_batch == 0:
+                if ilb / segfile.strategy.lines_in_batch > segfile.strategy.threshold_invalid_lines_in_batch:
+                    logger.error('%s of %s lines in a batch are invalid. Marking \'%s\' as invalid',
+                                 ilb, segfile.strategy.lines_in_batch, segfile.name)
+                    errors += 1
+                    break
+                segfile.line_cnt['invalid'] += ilb
+                ilb = 0
+                logger.info(batch)
+                batch = list()
+        logger.info('Processed %s lines', segfile.line_cnt['total'])
+        return errors
