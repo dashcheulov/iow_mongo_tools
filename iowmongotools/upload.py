@@ -4,7 +4,6 @@
 import os
 import logging
 import re
-import subprocess
 import gzip
 import shutil
 import time
@@ -14,22 +13,6 @@ from pymongo.operations import UpdateOne
 from iowmongotools import app, cluster, fs
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-def run_command(args, cluster):  # deprecated
-    """ **DEPRECATED**: Runs external command
-    .. versionchanged:: 0.4
-    Deprecated. Use :meth:`app.run_ext_command` instead.
-    :returns exit code
-    """
-    logger.warning('Deprecated function \'iowmongotools.upload.run_command\' is being called')
-    logger.info("Running command: %s", " ".join(args))
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
-                            universal_newlines=True)
-    with proc.stdout:
-        for line in proc.stdout:
-            logger.info('%s> %s', cluster, line.strip())
-    return proc.wait()
 
 
 def decompress_file(src, dst_dir):
@@ -77,11 +60,38 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         'text/csv': ','
     }
 
+    class Counter(object):
+        def __init__(self):
+            self.matched = 0
+            self.modified = 0
+            self.upserted = 0
+
+        def __str__(self):
+            out = list()
+            for name, val in self.__dict__.items():
+                if not val and name != 'matched':
+                    continue
+                out.append('{} - {}'.format(name.title(), val))
+            return ', '.join(out)
+
+    class Timer(object):
+        def __init__(self):
+            self.started_ts = 0
+            self.finished_ts = 0
+
+        @property
+        def processing_time_str(self):
+            if self.finished_ts > self.started_ts:
+                return time.strftime("Processing time - %-H hours %-M minutes %-S seconds.",
+                                     time.gmtime(self.finished_ts - self.started_ts))
+            return ''
+
     def __init__(self, path, provider, strategy):
         if not isinstance(strategy, Strategy):
             raise TypeError('strategy should be an instance of class Strategy')
         if not os.path.isfile(path):
             raise FileNotFoundError('File %s doesn\'t exist.' % path)
+        self.logger = logger
         self.path = path
         self.provider = provider
         self.name = os.path.basename(self.path).split('.')[0]
@@ -92,7 +102,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         self.invalid = False
         self.processed = False
         self.line_cnt = {'cur': 0, 'invalid': 0, 'total': 0}
-        self.timers = {'started': 0.0, 'finished': 0.0}
+        self.timer = self.Timer()
+        self.counter = self.Counter()
 
     def __gt__(self, other):
         return os.stat(self.path).st_mtime > os.stat(other.path).st_mtime
@@ -100,16 +111,16 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
     def get_line(self):
         if self.type[1] == 'gzip':
             open_func = gzip.open
-            logger.debug('%s is type of %s. Opening with gzip.', self.name, self.type)
+            self.logger.debug('The file is type of %s. Opening with gzip.', self.type)
         else:
             open_func = open
-            logger.debug('%s is type of %s. Opening.', self.name, self.type)
+            self.logger.debug('The file is type of %s. Opening.', self.type)
         with open_func(self.path, 'rt') as f_in:
             line = f_in.readline()
             while line:
                 yield line.strip()
                 line = f_in.readline()
-            logger.debug('Closing %s', self.name)
+            self.logger.debug('Closing the file')
 
     def get_setter(self, line_str):
         try:
@@ -122,37 +133,50 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         ilc = 0  # counter of invalid lines in a batch
         batch = list()
         self.invalid = False  # give it one more chance
-        self.timers['started'] = time.time()
+        self.counter.__init__()
+        self.timer.started_ts = time.time()
+        self.processed = False
+        last_log_ts = time.time()
+        last_line_cnt = 0
         for line in self.get_line():
+            time.sleep(0.01)
             self.line_cnt['cur'] += 1
             try:
                 line = self.get_setter(line)
                 batch.append(UpdateOne({'_id': line.pop('_id')}, {'$set': line}, upsert=self.strategy.upsert))
             except BadLine as err:
-                logger.warning('%s,%s. %s', self.name, self.line_cnt['cur'], err)
+                self.logger.warning('#%s. %s', self.line_cnt['cur'], err)
                 ilc += 1
             if self.line_cnt['cur'] % self.strategy.batch_size == 0:
                 self.line_cnt['invalid'] += ilc
                 if ilc / self.strategy.batch_size > self.strategy.threshold_invalid_lines_in_batch:
                     self.invalid = True
-                    raise InvalidSegmentFile('%s of %s lines in a batch are invalid. Marking \'%s\' as invalid' %
-                                             (ilc, self.strategy.batch_size, self.name))
+                    self.timer.finished_ts = time.time()
+                    raise InvalidSegmentFile('%s of %s lines in a batch are invalid. Marking the file as invalid' %
+                                             (ilc, self.strategy.batch_size))
+                if time.time() - last_log_ts > 2:
+                    speed = int((self.line_cnt['cur'] - last_line_cnt) / (time.time() - last_log_ts))
+                    last_line_cnt = self.line_cnt['cur']
+                    last_log_ts = time.time()
+                    percent = '{:.0f}%'.format(self.line_cnt['cur'] * 100 / self.line_cnt['total']) if self.line_cnt[
+                        'total'] else ''
+                    self.logger.info('Processing line #%-15s %-4s %10d lines/s', self.line_cnt['cur'], percent, speed)
                 if batch:
-                    logger.debug('Line %s: %s', self.line_cnt['cur'], batch[-1])
                     yield batch
                 ilc = 0
                 batch = list()
         self.line_cnt['invalid'] += ilc
         if batch:
-            logger.debug('Line %s: %s', self.line_cnt['cur'], batch[-1])
+            self.logger.debug('Line %s: %s', self.line_cnt['cur'], batch[-1])
             yield batch
-        self.timers['finished'] = time.time()
+        self.timer.finished_ts = time.time()
 
     def load_metadata(self, data):
         if data:
             self.invalid = data.get('invalid', self.invalid)
             self.processed = data.get('processed', self.processed)
-            self.timers = data.get('timers', self.timers)
+            self.timer.__dict__ = data.get('timer', self.timer.__dict__)
+            self.counter.__dict__ = data.get('counter', self.counter.__dict__)
             if self.processed and not self.invalid:
                 self.line_cnt['total'] = data['lines']['total']
             if self.provider != (data.get('provider') or self.provider):
@@ -171,7 +195,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             'invalid': self.invalid,
             'processed': self.processed,
             'lines': self.line_cnt,
-            'timers': self.timers
+            'timer': self.timer.__dict__,
+            'counter': self.counter.__dict__
         }
 
 
@@ -306,10 +331,24 @@ class Uploader(app.App, fs.EventHandler):
             'force': (False, 'Process files even they have been processed successfully previously'),
             'segments_collection': ('', 'Full name of collection (\'database.collection\') for uploading segments')
         })
+        config['logging'] = (app.deep_merge(config['logging'][0], {'formatters': {
+            'worker': {
+                'format': '%(asctime)s %(cluster)s %(provider)s [%(segfile)s] %(levelname)s: %(message)s',
+                'datefmt': '%H:%M:%S'}},
+            'handlers': {
+                'worker': {
+                    'class': 'logging.StreamHandler',
+                    'formatter': 'worker',
+                    'stream': 'ext://sys.stdout'}},
+            'loggers': {
+                'worker': {
+                    '()': 'ConstantExtraLogger',
+                    'handlers': ['worker'],
+                    'propagate': False}}}),)
         return config
 
     def run(self):
-        s = time.time()
+        start_ts = time.time()
         if not hasattr(self.config, 'clusters'):
             logger.error('Please provide cluster_config.yaml. See --help.')
             return 1
@@ -323,7 +362,7 @@ class Uploader(app.App, fs.EventHandler):
             self.config.upload[key]['collection'] = self.config.upload[key].get(
                 'collection') or self.config.segments_collection
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
-        self.pool = Pool(processes=len(cluster.Cluster.objects))
+        self.pool = Pool(processes=len(cluster.Cluster.objects))  # forking
         if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
             if len(self.config.providers) != 1:
                 logger.error('You\'re using --reprocess_file, please set only one of \'%s\' provider with --providers',
@@ -363,7 +402,7 @@ class Uploader(app.App, fs.EventHandler):
             if not self.results:
                 self.wait_for_items(file_emitters)
             self.consume_queue(file_emitters)
-        logger.info('Total working time is %s', time.time() - s)
+        logger.info('Total working time is %s', time.time() - start_ts)
         for file_emitter in file_emitters:
             if file_emitter.errors.is_set():
                 errors += 1
@@ -388,32 +427,36 @@ class Uploader(app.App, fs.EventHandler):
     @staticmethod
     def process_file(cluster_name, segfile):
         cl = cluster.Cluster.objects[cluster_name]
+        logger = logging.getLogger('worker')
+        logger.extra = {'provider': segfile.provider, 'segfile': segfile.name, 'cluster': cl.name}
+        segfile.logger = logger
         try:
             cl.read_segfile_info(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
             return 1
         if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
-            logger.debug('File \'%s\' has already been uploaded. Skipping.', segfile.name)
+            logger.debug('The file has already been uploaded. Skipping.')
             return 0
         if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
-            logger.debug('File \'%s\' is invalid. Skipping.', segfile.name)
+            logger.debug('The file is invalid. Skipping.')
             return 0
         if segfile.invalid:
-            logger.info('File \'%s\' was invalid. Reprocessing.', segfile.name)
+            logger.info('The file was invalid. Reprocessing.')
         elif segfile.processed:
-            logger.info('File \'%s\' was uploaded %s successfully. Reprocessing', segfile.name,
-                        time.strftime('%d %b %Y %H:%M', time.localtime(segfile.timers['finished'])))
+            logger.info('The file was uploaded successfully at %s. Reprocessing.',
+                        time.strftime('%d %b %Y %H:%M', time.localtime(segfile.timer.finished_ts)))
         else:
-            logger.info('Starting uploading file \'%s\'.', segfile.name)
+            logger.info('Starting uploading file \'%s\'.', segfile.path)
         try:
             cl.upload_segfile(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
             return 1
-        finally:
+        else:
             segfile.processed = True
+        finally:
             cl.save_segfile_info(segfile)
-            logger.info('%s> Processed %s lines from %s, %s invalid lines.', cl.name, segfile.line_cnt['cur'],
-                        segfile.path, segfile.line_cnt['invalid'])
+            logger.info('Finished %s lines from %s, %s invalid lines. %s. %s', segfile.line_cnt['cur'],
+                        segfile.path, segfile.line_cnt['invalid'], segfile.counter, segfile.timer.processing_time_str)
         return 0

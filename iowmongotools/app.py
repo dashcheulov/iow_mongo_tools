@@ -71,6 +71,59 @@ def human_to_seconds(string):
     return seconds
 
 
+def deep_merge(a, b, path=None):
+    if path is None:
+        path = []
+    for key in b:
+        if key in a:
+            if isinstance(a[key], dict) and isinstance(b[key], dict):
+                deep_merge(a[key], b[key], path + [str(key)])
+            elif a[key] == b[key]:
+                pass  # same leaf value
+            else:
+                raise Exception('Conflict at %s' % '.'.join(path + [str(key)]))
+        else:
+            a[key] = b[key]
+    return a
+
+
+class DictConfigurator(logging.config.DictConfigurator):
+    def configure_logger(self, name, config, incremental=False):
+        """Configure a non-root logger from a dictionary. Extended with factory class."""
+        factory_class = config.get('()', None)
+        _logger_class_buf = logging.getLoggerClass()
+        if factory_class:
+            logging.setLoggerClass(getattr(sys.modules[__name__], factory_class))
+        logger = logging.getLogger(name)
+        logging.setLoggerClass(_logger_class_buf)
+        self.common_logger_config(logger, config, incremental)
+        propagate = config.get('propagate', None)
+        if propagate is not None:
+            logger.propagate = propagate
+
+
+logging.config.dictConfigClass = DictConfigurator
+
+
+class ConstantExtraLogger(logging.Logger):
+    """Extended with constant 'extra'."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.extra = dict()
+
+    def makeRecord(self, name, level, fn, lno, msg, args, exc_info,
+                   func=None, extra=None, sinfo=None):
+        rv = logging.LogRecord(name, level, fn, lno, msg, args, exc_info, func, sinfo)
+        extra = extra or self.extra
+        if extra is not None:
+            for key in extra:
+                if (key in ["message", "asctime"]) or (key in rv.__dict__):
+                    raise KeyError("Attempt to overwrite %r in LogRecord" % key)
+                rv.__dict__[key] = extra[key]
+        return rv
+
+
 class Settings(object):
     """ Container with settings loaded from defaults which may be overwritten in config file or cmd-arguments"""
 
