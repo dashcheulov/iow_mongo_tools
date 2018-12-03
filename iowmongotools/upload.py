@@ -9,8 +9,8 @@ import gzip
 import shutil
 import time
 import mimetypes
-from copy import copy
 from multiprocessing import Pool, Event
+from pymongo.operations import UpdateOne
 from iowmongotools import app, cluster, fs
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -51,6 +51,10 @@ class BadLine(ValueError):
     pass
 
 
+class InvalidSegmentFile(Exception):
+    pass
+
+
 class UnknownTemplate(ValueError):
     def __init__(self, name):
         super().__init__('Template \'%s\' is unknown.' % name)
@@ -74,56 +78,10 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
     }
 
     def __init__(self, path, provider, strategy):
-        """
-        :type path: str
-        :param path: path to file
-        :type config: app.Settings
-        :param config: settings of application
-        :type processor: callable
-        :param processor: process file with segments, is invoked with following parameters filename, cluster, config
-
-        :Example:
-        ..code - block:: python
-
-        def processor(filename, cluster, config):
-            script_params = {
-                'config': config.processing_script_config,
-                'db': cluster,
-                'mongo_timeout_seconds': str(config.mongo_timeout_seconds),
-                'file': filename
-            }
-            return run_command(
-                ['/usr/bin/perl', os.path.join(config.hg_scripts_dir, config.processing_script)] + [
-                    '--{}={}'.format(k, v) for k, v in script_params.items()], cluster)
-        segfile = SegmentFile(filename, config, processor)
-        segfile.process(cluster)
-        """
-
-        class Flag(object):  # pylint: disable=too-few-public-methods
-            """ Descriptor of flag """
-
-            def __init__(self, name_in_db, init_value=None):
-                self.name = name_in_db
-                self.init_value = init_value
-                self._val = None  # copy of value. For comparing we need to store previous value
-
-            def __get__(self, obj, objtype):
-                return obj.db.get(self.name) or self.init_value
-
-            def __set__(self, obj, val):
-                obj.db.update(self.name, val)
-                if val != self._val:
-                    obj.db.flush()
-                    self._val = copy(val)
-
-        class Flags(object):  # pylint: disable=too-few-public-methods,no-init
-            """ Container for flags (properties in db) """
-            db = object
-            invalid = Flag('invalid', set())  # set of clusters, in which uploading failed
-            processed = Flag('processed', set())  # set of clusters, in which uploading succeed
-
         if not isinstance(strategy, Strategy):
             raise TypeError('strategy should be an instance of class Strategy')
+        if not os.path.isfile(path):
+            raise FileNotFoundError('File %s doesn\'t exist.' % path)
         self.path = path
         self.provider = provider
         self.name = os.path.basename(self.path).split('.')[0]
@@ -131,8 +89,10 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         self.type = mimetypes.guess_type(path)
         if self.type[0] not in strategy.allowed_types:
             raise WrongFileType(self.name, self.type[0], strategy.allowed_types)
-        self.tmp_file = self.path
-        self.line_cnt = {'invalid': 0, 'total': 0}
+        self.invalid = False
+        self.processed = False
+        self.line_cnt = {'cur': 0, 'invalid': 0, 'total': 0}
+        self.timers = {'started': 0.0, 'finished': 0.0}
 
     def __gt__(self, other):
         return os.stat(self.path).st_mtime > os.stat(other.path).st_mtime
@@ -158,12 +118,70 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         except BadLine:
             raise BadLine('Line \'%s\' is invalid.' % line_str)
 
+    def get_batch(self):
+        ilc = 0  # counter of invalid lines in a batch
+        batch = list()
+        self.invalid = False  # give it one more chance
+        self.timers['started'] = time.time()
+        for line in self.get_line():
+            self.line_cnt['cur'] += 1
+            try:
+                line = self.get_setter(line)
+                batch.append(UpdateOne({'_id': line.pop('_id')}, {'$set': line}, upsert=self.strategy.upsert))
+            except BadLine as err:
+                logger.warning('%s,%s. %s', self.name, self.line_cnt['cur'], err)
+                ilc += 1
+            if self.line_cnt['cur'] % self.strategy.batch_size == 0:
+                self.line_cnt['invalid'] += ilc
+                if ilc / self.strategy.batch_size > self.strategy.threshold_invalid_lines_in_batch:
+                    self.invalid = True
+                    raise InvalidSegmentFile('%s of %s lines in a batch are invalid. Marking \'%s\' as invalid' %
+                                             (ilc, self.strategy.batch_size, self.name))
+                if batch:
+                    logger.debug('Line %s: %s', self.line_cnt['cur'], batch[-1])
+                    yield batch
+                ilc = 0
+                batch = list()
+        self.line_cnt['invalid'] += ilc
+        if batch:
+            logger.debug('Line %s: %s', self.line_cnt['cur'], batch[-1])
+            yield batch
+        self.timers['finished'] = time.time()
+
+    def load_metadata(self, data):
+        if data:
+            self.invalid = data.get('invalid', self.invalid)
+            self.processed = data.get('processed', self.processed)
+            self.timers = data.get('timers', self.timers)
+            if self.processed and not self.invalid:
+                self.line_cnt['total'] = data['lines']['total']
+            if self.provider != (data.get('provider') or self.provider):
+                raise InvalidSegmentFile(
+                    'File \'%s\' belonged to provider \'%s\'. Now you\'re trying to load it as \'%s\'' % (
+                        self.name, data.get('provider'), self.provider))
+
+    def dump_metadata(self):
+        if not self.invalid:
+            self.line_cnt['total'] = self.line_cnt['cur']
+        return {
+            '_id': self.name,
+            'path': self.path,
+            'provider': self.provider,
+            'type': self.type,
+            'invalid': self.invalid,
+            'processed': self.processed,
+            'lines': self.line_cnt,
+            'timers': self.timers
+        }
+
 
 class Strategy(object):
 
     def __init__(self, config):
         if 'input' not in config or 'output' not in config:
             raise AttributeError('Uploading strategy must have both sections \'input\' and \'output\'')
+        if 'collection' not in config or len(config.get('collection', '').split('.')) != 2:
+            raise AttributeError('Parameter \'collection\' is mandatory. Set as \'database.collection\'')
         self.allowed_types = frozenset(ft for ft in SegmentFile.SEPARATORS_MAP.keys() if ft in config['input'])
         if not self.allowed_types:
             raise AttributeError(
@@ -175,8 +193,14 @@ class Strategy(object):
                 self.input[file_type]['titles'].append(title)
                 self.input[file_type]['patterns'].append(re.compile(pattern))
         self.output = config['output']
+        if not '_id' in self.output:
+            raise AttributeError('Section \'output\' must have field \'_id\'')
+        self.database, self.collection = config['collection'].split('.')
         self.template_params = self.prepare_template_params(config.get('templates', dict()))
-        self.lines_in_batch = config.get('lines_in_batch', 1000)
+        self.batch_size = config.get('batch_size', 1000)
+        self.reprocess_invalid = config['reprocess_invalid']
+        self.force_reprocess = config['force_reprocess']
+        self.upsert = config.get('upsert', False)
         self.threshold_invalid_lines_in_batch = config.get('threshold_invalid_lines_in_batch', 0.8)
         self.template = re.compile(r'{{(.*)}}')
 
@@ -277,8 +301,10 @@ class Uploader(app.App, fs.EventHandler):
         config = super().default_config
         config.update({
             'upload': (dict(),),
-            'db_path': ('db.yaml', 'Path to file containing state of uploading.'),
             'reprocess_invalid': (False, 'Whether reprocess files were not uploaded previously'),
+            'reprocess_file': ([], 'Paths of files which will be reprocessed.'),
+            'force': (False, 'Process files even they have been processed successfully previously'),
+            'segments_collection': ('', 'Full name of collection (\'database.collection\') for uploading segments')
         })
         return config
 
@@ -287,16 +313,40 @@ class Uploader(app.App, fs.EventHandler):
         if not hasattr(self.config, 'clusters'):
             logger.error('Please provide cluster_config.yaml. See --help.')
             return 1
+        mimetypes.init()
+        mimetypes.types_map.update(self.config.mime_types_map)
+        for key in self.config.upload.keys():  # merge providers' settings with global ones
+            if 'reprocess_invalid' not in self.config.upload[key]:
+                self.config.upload[key]['reprocess_invalid'] = self.config.reprocess_invalid
+            if 'force_reprocess' not in self.config.upload[key]:
+                self.config.upload[key]['force_reprocess'] = self.config.force
+            self.config.upload[key]['collection'] = self.config.upload[key].get(
+                'collection') or self.config.segments_collection
+        errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
+        self.pool = Pool(processes=len(cluster.Cluster.objects))
+        if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
+            if len(self.config.providers) != 1:
+                logger.error('You\'re using --reprocess_file, please set only one of \'%s\' provider with --providers',
+                             ', '.join(self.config.upload.keys()))
+                return 1
+            for path in self.config.reprocess_file:
+                try:
+                    segfile = SegmentFile(path, self.config.providers[0],
+                                          Strategy(self.config.upload[self.config.providers[0]]))
+                    self.results += [self.pool.apply_async(self.process_file, (cl_name, segfile))
+                                     for cl_name, _ in cluster.Cluster.objects.items()]
+                except FileNotFoundError as err:
+                    logger.error(err)
+                    errors += 1
+            for result in self.results:
+                errors += result.get()
+            return errors  # end of reprocessing paths.
         for provider in self.config.upload.copy().keys():
             if provider not in self.config.providers:
                 self.config.upload.pop(provider)
         if not self.config.upload:
             logger.error('Uploading isn\'t configured. Fill in section \'upload\' in config. Set \'--providers\'.')
             return 1
-        mimetypes.init()
-        mimetypes.types_map.update(self.config.mime_types_map)
-        errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
-        self.pool = Pool(processes=len(cluster.Cluster.objects))
         file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
         self.wait_for_items(file_emitters)
         self.consume_queue(file_emitters)
@@ -338,25 +388,32 @@ class Uploader(app.App, fs.EventHandler):
     @staticmethod
     def process_file(cluster_name, segfile):
         cl = cluster.Cluster.objects[cluster_name]
-        errors = 0
-        ilb = 0  # counter of invalid lines in a batch
-        batch = list()
-        for line in segfile.get_line():
-            segfile.line_cnt['total'] += 1
-            try:
-                batch.append(segfile.get_setter(line))
-            except BadLine as err:
-                logger.warning('%s,%s. %s', segfile.name, segfile.line_cnt['total'], err)
-                ilb += 1
-            if segfile.line_cnt['total'] % segfile.strategy.lines_in_batch == 0:
-                if ilb / segfile.strategy.lines_in_batch > segfile.strategy.threshold_invalid_lines_in_batch:
-                    logger.error('%s of %s lines in a batch are invalid. Marking \'%s\' as invalid',
-                                 ilb, segfile.strategy.lines_in_batch, segfile.name)
-                    errors += 1
-                    break
-                segfile.line_cnt['invalid'] += ilb
-                ilb = 0
-                logger.info(batch)
-                batch = list()
-        logger.info('Processed %s lines', segfile.line_cnt['total'])
-        return errors
+        try:
+            cl.read_segfile_info(segfile)
+        except InvalidSegmentFile as err:
+            logger.error(err)
+            return 1
+        if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
+            logger.debug('File \'%s\' has already been uploaded. Skipping.', segfile.name)
+            return 0
+        if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
+            logger.debug('File \'%s\' is invalid. Skipping.', segfile.name)
+            return 0
+        if segfile.invalid:
+            logger.info('File \'%s\' was invalid. Reprocessing.', segfile.name)
+        elif segfile.processed:
+            logger.info('File \'%s\' was uploaded %s successfully. Reprocessing', segfile.name,
+                        time.strftime('%d %b %Y %H:%M', time.localtime(segfile.timers['finished'])))
+        else:
+            logger.info('Starting uploading file \'%s\'.', segfile.name)
+        try:
+            cl.upload_segfile(segfile)
+        except InvalidSegmentFile as err:
+            logger.error(err)
+            return 1
+        finally:
+            segfile.processed = True
+            cl.save_segfile_info(segfile)
+            logger.info('%s> Processed %s lines from %s, %s invalid lines.', cl.name, segfile.line_cnt['cur'],
+                        segfile.path, segfile.line_cnt['invalid'])
+        return 0
