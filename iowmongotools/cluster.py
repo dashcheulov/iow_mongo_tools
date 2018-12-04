@@ -30,6 +30,7 @@ def create_objects(clusters, cluster_config):
 class Cluster(object):
     """ Represents mongo cluster """
     objects = dict()
+    SEGFILE_INFO_COLLECTION = 'segment_files'
 
     def __new__(cls, name, cluster_config):
         if name not in cls.objects:
@@ -148,3 +149,19 @@ class Cluster(object):
                 self.name, yaml.safe_dump(self._declared_config, default_flow_style=False),
                 yaml.safe_dump(actual_config, default_flow_style=False))
             return False
+
+    def read_segfile_info(self, obj):
+        collection = self._api[obj.strategy.database][self.SEGFILE_INFO_COLLECTION]
+        obj.load_metadata(collection.find_one(obj.name))
+
+    def save_segfile_info(self, obj):
+        collection = self._api[obj.strategy.database][self.SEGFILE_INFO_COLLECTION]
+        collection.replace_one({'_id': obj.name}, obj.dump_metadata(), upsert=True)
+
+    def upload_segfile(self, obj):
+        for batch in obj.get_batch():
+            result = self._api[obj.strategy.database][obj.strategy.collection].bulk_write(batch)
+            obj.counter.matched += result.matched_count
+            if result.modified_count is not None:
+                obj.counter.modified += result.modified_count
+            obj.counter.upserted += result.upserted_count

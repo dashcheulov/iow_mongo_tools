@@ -2,6 +2,11 @@ from iowmongotools import app
 import pytest
 
 
+def test_human_to_seconds():
+    assert app.human_to_seconds("3D18h3m54s") == 324234
+    assert app.human_to_seconds("1Y") == 365 * 86400
+    assert app.human_to_seconds("30D") == 2592000
+
 def test_class_settings_with_only_defaults():
     defaults = {
         'property1': ('sample',), 'property2': (2, 'description'), 'property3': (None,),
@@ -123,7 +128,7 @@ def test_class_settingscli_with_arguments(tmpdir, monkeypatch):
                                           'list': ['one', 'two']}
 
 
-def test_class_settingscli_load_cluster_config_through_argument(monkeypatch, tmpdir):
+def test_class_settingsclicluster_load_cluster_config_through_argument(monkeypatch, tmpdir):
     cluster_config = tmpdir.join('tmp_cluster_config.yaml')
     cluster_config.write('''
     aws-va:
@@ -138,7 +143,7 @@ def test_class_settingscli_load_cluster_config_through_argument(monkeypatch, tmp
                                                                                 '--cluster_config',
                                                                                 str(cluster_config.realpath())
                                                                             ],))
-    settings_instance = app.SettingsCli(defaults)
+    settings_instance = app.SettingCliCluster(defaults)
     assert settings_instance.property == 'sample'
     assert settings_instance.cluster_config['aws-va'] == {'mongos': ['mongos1:27017']}
     assert settings_instance.clusters == {'aws-va', 'gce-eu'}
@@ -212,4 +217,4 @@ def test_class_invoker():
     # adding garbage instead of Command
     with pytest.raises(TypeError) as excinfo:
         invoker.add(sample_dict)
-    assert str(excinfo.value) == 'Instanses of \'Command\' class are allowed only'
+    assert str(excinfo.value) == 'Instances of \'Command\' class are allowed only'

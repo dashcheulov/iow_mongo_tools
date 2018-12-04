@@ -1,16 +1,17 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.4.9"
+__version__ = "0.5.0"
 __status__ = "Pre-Alpha"
 
 import logging
 from multiprocessing.pool import ThreadPool
-from iowmongotools import app, cluster
+from iowmongotools import app, cluster, upload
 
 logger = logging.getLogger(__name__)
 
 
 class MongoCheckerCli(app.AppCli):
+    SettingsClass = app.SettingCliCluster
 
     def run(self):
         if not hasattr(self.config, 'clusters'):
@@ -26,6 +27,7 @@ class MongoCheckerCli(app.AppCli):
 
 
 class MongoSetCli(app.AppCli):
+    SettingsClass = app.SettingCliCluster
 
     @property
     def default_config(self):
@@ -86,7 +88,7 @@ class MongoCloneCli(app.AppCli):
         config.update({
             'dry': (False, 'During dry run actions will just be printed.'),
             'force': (False, 'Copy collection even it doesn\'t exist on destination. It will be created unsharded.'),
-            'upsert': (True, 'Insert document, if it doesn\'t exist at destination..'),
+            'upsert': (True, 'Disable upserts.'),
             'src': ('', 'Name of source cluster'),
             'dst': ('', 'Name of destination cluster')
         })
@@ -125,3 +127,7 @@ class MongoCloneCli(app.AppCli):
         else:
             return invoker.execute()
         return 0
+
+
+class MongoUploadCli(upload.Uploader, app.AppCli):
+    SettingsClass = app.SettingCliUploader

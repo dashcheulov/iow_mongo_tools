@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.0 (2018-12-04)
+------------------
+- extended SettingCli with extra_run() and cleanup(). #IOWOPS-13673
+- added SettingCliUploader and SettingCliCluster based on SettingCli. #IOWOPS-13673
+- glad to introduce tool 'mongo_uploader'. #IOWOPS-13673
+
 0.4.9 (2018-11-15)
 ------------------
 - added mandatory check of exiting databases on mongod in 'mongo_set'. #IOWOPS-13114
