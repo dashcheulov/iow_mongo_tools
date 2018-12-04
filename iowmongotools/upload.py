@@ -223,8 +223,8 @@ class Strategy(object):
         self.database, self.collection = config['collection'].split('.')
         self.template_params = self.prepare_template_params(config.get('templates', dict()))
         self.batch_size = config.get('batch_size', 1000)
-        self.reprocess_invalid = config['reprocess_invalid']
-        self.force_reprocess = config['force_reprocess']
+        self.reprocess_invalid = config.get('reprocess_invalid', False)
+        self.force_reprocess = config.get('force_reprocess', False)
         self.upsert = config.get('upsert', False)
         self.threshold_invalid_lines_in_batch = config.get('threshold_invalid_lines_in_batch', 0.8)
         self.template = re.compile(r'{{(.*)}}')
