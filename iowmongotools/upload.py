@@ -143,7 +143,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             self.line_cnt['cur'] += 1
             try:
                 line = self.get_setter(line)
-                batch.append(UpdateOne({'_id': line.pop('_id')}, {'$set': line}, upsert=self.strategy.upsert))
+                batch.append(UpdateOne({'_id': line.pop('_id')}, line, upsert=self.strategy.upsert))
             except BadLine as err:
                 if self.strategy.log_invalid_lines:
                     self.log('warning', '#{}. {}'.format(self.line_cnt['cur'], err))
@@ -209,8 +209,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
 class Strategy(object):
 
     def __init__(self, config):
-        if 'input' not in config or 'output' not in config:
-            raise AttributeError('Uploading strategy must have both sections \'input\' and \'output\'')
+        if 'input' not in config or 'update' not in config:
+            raise AttributeError('Uploading strategy must have both sections \'input\' and \'update\'')
         if 'collection' not in config or len(config.get('collection', '').split('.')) != 2:
             raise AttributeError('Parameter \'collection\' is mandatory. Set as \'database.collection\'')
         self.allowed_types = frozenset(ft for ft in SegmentFile.SEPARATORS_MAP.keys() if ft in config['input'])
@@ -223,9 +223,9 @@ class Strategy(object):
             for title, pattern in config['input'][file_type].items():
                 self.input[file_type]['titles'].append(title)
                 self.input[file_type]['patterns'].append(re.compile(pattern))
-        self.output = config['output']
+        self.output = config['update']
         if not '_id' in self.output:
-            raise AttributeError('Section \'output\' must have field \'_id\'')
+            raise AttributeError('Section \'update\' must have field \'_id\'')
         self.database, self.collection = config['collection'].split('.')
         self.template_params = self.prepare_template_params(config.get('templates', dict()))
         self.batch_size = config.get('batch_size', 1000)

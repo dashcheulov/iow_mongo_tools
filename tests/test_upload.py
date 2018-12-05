@@ -3,7 +3,7 @@ import pytest
 import time
 
 
-def test_strategy_without_defined_output():
+def test_strategy_without_defined_update():
     with pytest.raises(AttributeError) as excinfo:
         upload.Strategy({'input': {}})
 
@@ -11,10 +11,10 @@ def test_strategy_without_defined_output():
 def test_strategy_prepare_template_params():
     expiration_ts_default = int(time.time() + 2592000)  # 30 days
     expiration_ts = int(time.time() + 90000)  # 1 day 1 hour
-    sample_strategy_default = upload.Strategy({'input': {'text/csv': {}}, 'output': {'_id': ''}, 'collection': 'a.b'})
+    sample_strategy_default = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
     sample_strategy = upload.Strategy(
         {'input': {'text/csv': {}}, 'templates': {'hash_of_segments': {'segment_separator': ':', 'retention': '1D1h'}},
-         'output': {'_id': ''}, 'collection': 'a.b'})
+         'update': {'_id': ''}, 'collection': 'a.b'})
     assert sample_strategy_default.template_params == {
         'hash_of_segments': {'expiration_ts': expiration_ts_default, 'segment_separator': ',',
                              'from_fields': ['segments']}}
@@ -23,9 +23,9 @@ def test_strategy_prepare_template_params():
 
 
 def test_strategy_get_hash_of_segments():
-    sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'output': {'_id': ''}, 'collection': 'a.b'})
+    sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
     sample_strategy2 = upload.Strategy(
-        {'input': {'text/csv': {}}, 'templates': {'hash_of_segments': {'retention': '5D2m4s'}}, 'output': {'_id': ''},
+        {'input': {'text/csv': {}}, 'templates': {'hash_of_segments': {'retention': '5D2m4s'}}, 'update': {'_id': ''},
          'collection': 'a.b'})
     expiration_ts = int(time.time() + 2592000)  # 30 days
     expiration_ts2 = int(time.time() + 432124)  # 5D2m4s
@@ -38,7 +38,7 @@ def test_strategy_get_hash_of_segments():
 
 
 def test_strategy_parse_output():
-    sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'output': {'_id': ''}, 'collection': 'a.b'})
+    sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
     assert sample_strategy._parse_output(
         {'_id': "{{user_id}}", 'dmp': {'bk': '{hash_of_segments}', 'fra': 'rg', 'some_key': '{{some_key}}'}},
         {'user_id': 'wefv', 'some_key': 'some_val'}) == {'_id': 'wefv', 'dmp': {'bk': '{hash_of_segments}', 'fra': 'rg',
@@ -59,7 +59,7 @@ def test_strategy_get_setter():
         'bluekai_id': '.*',
         'campaign_ids': '.*',
         'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}},
-        'output': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}}, 'collection': 'a.b'})
+        'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}}, 'collection': 'a.b'})
     expiration_ts = int(time.time() + 2592000)  # 30 days
     assert sample_strategy.get_setter(
         ['cd59f2ca-5480-4fb9-b580-2e2f3194ce96', 'K68zJkWO99eQaG2q', '312041', '678269,678272,765488,408098'],

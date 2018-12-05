@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.3 (2018-12-05)
+------------------
+- renamed section 'output' to 'update' in config.
+
 0.5.2 (2018-12-05)
 ------------------
 - added parameter 'log_invalid_lines' to config, 'true' by default.
