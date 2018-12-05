@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.4 (2018-12-05)
+------------------
+- fixed working of param '--force' of 'mongo_clone'.
+
 0.5.3 (2018-12-05)
 ------------------
 - renamed section 'output' to 'update' in config.

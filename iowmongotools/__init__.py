@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.5.3"
+__version__ = "0.5.4"
 __status__ = "Pre-Alpha"
 
 import logging
@@ -125,7 +125,7 @@ class MongoCloneCli(app.AppCli):
         if self.config.dry:
             invoker.print()
         else:
-            return invoker.execute()
+            return invoker.execute(self.config.force)
         return 0
 
 
