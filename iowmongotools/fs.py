@@ -43,7 +43,7 @@ class Observer(Process):
         if not isinstance(handler, EventHandler):
             raise TypeError("Only instances of '%s' class are allowed" % EventHandler.__name__)
         self.observable = handler
-        # Automatically start thread
+        # Automatically starting
         self.start()
 
 

@@ -160,8 +160,5 @@ class Cluster(object):
 
     def upload_segfile(self, obj):
         for batch in obj.get_batch():
-            result = self._api[obj.strategy.database][obj.strategy.collection].bulk_write(batch)
-            obj.counter.matched += result.matched_count
-            if result.modified_count is not None:
-                obj.counter.modified += result.modified_count
-            obj.counter.upserted += result.upserted_count
+            obj.counter.count_bulk_write_result(
+                self._api[obj.strategy.database][obj.strategy.collection].bulk_write(batch))

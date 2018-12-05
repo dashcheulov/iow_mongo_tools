@@ -78,3 +78,22 @@ def test_strategy_get_setter():
     with pytest.raises(upload.BadLine):
         sample_strategy.get_setter(['b6dabebf-8e48-4465-a0dd-9a705b607255', 'e', '4', '67R82_s69,6'],
                                    sample_strategy.input['text/tab-separated-values'])
+
+
+def test_segfile_counter():
+    class MockResult(object):
+        def __init__(self, matched_count, modified_count, upserted_count):
+            self.matched_count = matched_count
+            self.modified_count = modified_count
+            self.upserted_count = upserted_count
+    sample_counter = upload.SegmentFile.Counter()
+    for result in ((1, 0, 1), (1, 0, 0), (0, 0, 1)):
+        sample_counter.count_bulk_write_result(MockResult(*result))
+    assert (sample_counter.matched, sample_counter.modified, sample_counter.upserted) == (2, 0, 2)
+    assert str(sample_counter) == 'matched - 2, upserted - 2'
+    sample_counter2 = upload.SegmentFile.Counter()
+    for result in ((1, 2, 0), (0, 1, 0), (2, 0, 0)):
+        sample_counter2.count_bulk_write_result(MockResult(*result))
+    assert (sample_counter2.matched, sample_counter2.modified, sample_counter2.upserted) == (3, 3, 0)
+    assert str(sample_counter2) == 'matched - 3, modified - 3'
+    assert str(sample_counter + sample_counter2) == 'matched - 5, modified - 3, upserted - 2'

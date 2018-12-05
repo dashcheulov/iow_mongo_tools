@@ -1,6 +1,14 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.1 (2018-12-05)
+------------------
+- added classes Timer and Counter to module upload.
+- added factory method 'log' to SegFile in order not to pickle logger object to a processes.
+- now param 'cluster_config' may be path to yaml or config itself.
+- handled addition in SegFile.Counter.
+- took of counting results from Cluster.upload_segfile() to SegFile.Counter.count_bulk_write_result().
+
 0.5.0 (2018-12-04)
 ------------------
 - extended SettingCli with extra_run() and cleanup(). #IOWOPS-13673

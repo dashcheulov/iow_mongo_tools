@@ -223,7 +223,9 @@ class SettingCliCluster(SettingsCli):
         parser.add_argument("--{}".format('cluster_config'), default=getattr(self, 'cluster_config', None),
                             help='Path to yaml file containing description of clusters')
         parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
-        self.tmp['cluster_config'] = self.read_config_file(self.cluster_config)
+        self.tmp['cluster_config'] = getattr(self, 'cluster_config')
+        if os.path.isfile(str(self.tmp['cluster_config'])):
+            self.tmp['cluster_config'] = self.read_config_file(self.cluster_config)
         if self.tmp['cluster_config']:
             parser.add_argument("--{}".format('clusters'), default=[c for c in self.tmp['cluster_config'].keys()],
                                 help='Cluster names to be processed', nargs='*')

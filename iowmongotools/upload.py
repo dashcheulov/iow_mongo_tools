@@ -66,32 +66,32 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             self.modified = 0
             self.upserted = 0
 
+        def __add__(self, other):
+            obj = SegmentFile.Counter()
+            for key in obj.__dict__.keys():
+                obj.__dict__[key] = self.__dict__[key] + other.__dict__[key]
+            return obj
+
         def __str__(self):
             out = list()
             for name, val in self.__dict__.items():
                 if not val and name != 'matched':
                     continue
-                out.append('{} - {}'.format(name.title(), val))
-            return ', '.join(out)
+                out.append('{} - {}'.format(name, val))
+            return 'Documents: {}.'.format(', '.join(out))
 
-    class Timer(object):
-        def __init__(self):
-            self.started_ts = 0
-            self.finished_ts = 0
-
-        @property
-        def processing_time_str(self):
-            if self.finished_ts > self.started_ts:
-                return time.strftime("Processing time - %-H hours %-M minutes %-S seconds.",
-                                     time.gmtime(self.finished_ts - self.started_ts))
-            return ''
+        def count_bulk_write_result(self, result):
+            self.matched += result.matched_count
+            if result.modified_count is not None:
+                self.modified += result.modified_count
+            self.upserted += result.upserted_count
 
     def __init__(self, path, provider, strategy):
         if not isinstance(strategy, Strategy):
             raise TypeError('strategy should be an instance of class Strategy')
         if not os.path.isfile(path):
             raise FileNotFoundError('File %s doesn\'t exist.' % path)
-        self.logger = logger
+        self.logger = None
         self.path = path
         self.provider = provider
         self.name = os.path.basename(self.path).split('.')[0]
@@ -102,7 +102,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         self.invalid = False
         self.processed = False
         self.line_cnt = {'cur': 0, 'invalid': 0, 'total': 0}
-        self.timer = self.Timer()
+        self.timer = Timer()
         self.counter = self.Counter()
 
     def __gt__(self, other):
@@ -111,16 +111,16 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
     def get_line(self):
         if self.type[1] == 'gzip':
             open_func = gzip.open
-            self.logger.debug('The file is type of %s. Opening with gzip.', self.type)
+            self.log('debug', 'The file is type of %s. Opening with gzip.'.format(self.type))
         else:
             open_func = open
-            self.logger.debug('The file is type of %s. Opening.', self.type)
+            self.log('debug', 'The file is type of %s. Opening.'.format(self.type))
         with open_func(self.path, 'rt') as f_in:
             line = f_in.readline()
             while line:
                 yield line.strip()
                 line = f_in.readline()
-            self.logger.debug('Closing the file')
+            self.log('debug', 'Closing the file')
 
     def get_setter(self, line_str):
         try:
@@ -134,42 +134,43 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         batch = list()
         self.invalid = False  # give it one more chance
         self.counter.__init__()
-        self.timer.started_ts = time.time()
+        self.timer.__init__()
+        self.timer.start()
         self.processed = False
         last_log_ts = time.time()
         last_line_cnt = 0
         for line in self.get_line():
-            time.sleep(0.01)
             self.line_cnt['cur'] += 1
             try:
                 line = self.get_setter(line)
                 batch.append(UpdateOne({'_id': line.pop('_id')}, {'$set': line}, upsert=self.strategy.upsert))
             except BadLine as err:
-                self.logger.warning('#%s. %s', self.line_cnt['cur'], err)
+                self.log('warning', '#{}. {}'.format(self.line_cnt['cur'], err))
                 ilc += 1
             if self.line_cnt['cur'] % self.strategy.batch_size == 0:
                 self.line_cnt['invalid'] += ilc
-                if ilc / self.strategy.batch_size > self.strategy.threshold_invalid_lines_in_batch:
+                if ilc / self.strategy.batch_size >= self.strategy.threshold_percent_invalid_lines_in_batch * 100:
                     self.invalid = True
-                    self.timer.finished_ts = time.time()
+                    self.timer.stop()
                     raise InvalidSegmentFile('%s of %s lines in a batch are invalid. Marking the file as invalid' %
                                              (ilc, self.strategy.batch_size))
-                if time.time() - last_log_ts > 2:
+                if time.time() - last_log_ts > 30:
                     speed = int((self.line_cnt['cur'] - last_line_cnt) / (time.time() - last_log_ts))
                     last_line_cnt = self.line_cnt['cur']
                     last_log_ts = time.time()
                     percent = '{:.0f}%'.format(self.line_cnt['cur'] * 100 / self.line_cnt['total']) if self.line_cnt[
                         'total'] else ''
-                    self.logger.info('Processing line #%-15s %-4s %10d lines/s', self.line_cnt['cur'], percent, speed)
+                    self.log('info',
+                             'Processing line #%-15s %-4s %10d lines/s' % (self.line_cnt['cur'], percent, speed))
                 if batch:
                     yield batch
                 ilc = 0
                 batch = list()
         self.line_cnt['invalid'] += ilc
         if batch:
-            self.logger.debug('Line %s: %s', self.line_cnt['cur'], batch[-1])
+            self.log('debug', 'Line {}: {}'.format(self.line_cnt['cur'], batch[-1]))
             yield batch
-        self.timer.finished_ts = time.time()
+        self.timer.stop()
 
     def load_metadata(self, data):
         if data:
@@ -199,6 +200,10 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             'counter': self.counter.__dict__
         }
 
+    def log(self, severity, message):
+        """ factory method using local or global logger. need in order not to pickle logger object to a processes """
+        getattr(self.logger or logger, severity)(message)
+
 
 class Strategy(object):
 
@@ -226,7 +231,7 @@ class Strategy(object):
         self.reprocess_invalid = config.get('reprocess_invalid', False)
         self.force_reprocess = config.get('force_reprocess', False)
         self.upsert = config.get('upsert', False)
-        self.threshold_invalid_lines_in_batch = config.get('threshold_invalid_lines_in_batch', 0.8)
+        self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
         self.template = re.compile(r'{{(.*)}}')
 
     @staticmethod
@@ -314,10 +319,55 @@ class FileEmitter(fs.EventHandler):
             raise NoAnyDelivery(self.provider)
 
 
-class Uploader(app.App, fs.EventHandler):
+class Timer(object):
+    def __init__(self):
+        self.started_ts = 0
+        self.finished_ts = 0
+
+    def start(self):
+        self.started_ts = time.time()
+
+    def stop(self):
+        self.finished_ts = time.time()
+
+    def __str__(self):
+        if self.finished_ts > self.started_ts:
+            return time.strftime("Processing time - %-H hours %-M minutes %-S seconds.",
+                                 time.gmtime(self.finished_ts - self.started_ts))
+        return ''
+
+
+class Counter(object):
+
+    def __init__(self):
+        self.invalid = 0
+        self.skipped = 0
+        self._segfile_counters = list()
+
+    def count_result(self, item):
+        if item == 1:
+            self.invalid += 1
+        if item == 0:
+            self.skipped += 1
+        if isinstance(item, SegmentFile.Counter):
+            self._segfile_counters.append(item)
+
+    def __str__(self):
+        out = list()
+        for name, val in self.__dict__.items():
+            if not val:
+                continue
+            if name == '_segfile_counters':
+                out.append('{} - {}'.format('processed', len(val)))
+                continue
+            out.append('{} - {}'.format(name, val))
+        segfile_counters = sum(self._segfile_counters, self._segfile_counters.pop()) if self._segfile_counters else ''
+        return 'Total files: {}. {}'.format(', '.join(out), segfile_counters)
+
+
+class Uploader(app.App):
     def __init__(self):
         super().__init__()
-        fs.EventHandler.__init__(self)
         self.pool = None
         self.results = []
 
@@ -348,7 +398,8 @@ class Uploader(app.App, fs.EventHandler):
         return config
 
     def run(self):
-        start_ts = time.time()
+        timer = Timer()
+        timer.start()
         if not hasattr(self.config, 'clusters'):
             logger.error('Please provide cluster_config.yaml. See --help.')
             return 1
@@ -389,24 +440,26 @@ class Uploader(app.App, fs.EventHandler):
         file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
         self.wait_for_items(file_emitters)
         self.consume_queue(file_emitters)
+        counter = Counter()
         while self.results:
             result_ready = False
             while not result_ready:  # polling of results
                 time.sleep(0.5)
                 for result in self.results:
                     if result.ready():
-                        errors += result.get()
+                        counter.count_result(result.get())
                         self.results.remove(result)
                         result_ready = True
                 self.consume_queue(file_emitters)
             if not self.results:
                 self.wait_for_items(file_emitters)
             self.consume_queue(file_emitters)
-        logger.info('Total working time is %s', time.time() - start_ts)
         for file_emitter in file_emitters:
             if file_emitter.errors.is_set():
                 errors += 1
-        return errors
+        timer.stop()
+        logger.info('%s %s', counter, timer)
+        return errors + counter.invalid
 
     @staticmethod
     def wait_for_items(emitter_objects, timeout=10800, atleast_one=False):
@@ -457,6 +510,6 @@ class Uploader(app.App, fs.EventHandler):
             segfile.processed = True
         finally:
             cl.save_segfile_info(segfile)
-            logger.info('Finished %s lines from %s, %s invalid lines. %s. %s', segfile.line_cnt['cur'],
-                        segfile.path, segfile.line_cnt['invalid'], segfile.counter, segfile.timer.processing_time_str)
-        return 0
+            logger.info('Finished %s lines from %s, %s invalid lines. %s %s', segfile.line_cnt['cur'],
+                        segfile.path, segfile.line_cnt['invalid'], segfile.counter, segfile.timer)
+        return segfile.counter
