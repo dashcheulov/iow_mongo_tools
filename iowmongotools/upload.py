@@ -145,7 +145,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                 line = self.get_setter(line)
                 batch.append(UpdateOne({'_id': line.pop('_id')}, {'$set': line}, upsert=self.strategy.upsert))
             except BadLine as err:
-                self.log('warning', '#{}. {}'.format(self.line_cnt['cur'], err))
+                if self.strategy.log_invalid_lines:
+                    self.log('warning', '#{}. {}'.format(self.line_cnt['cur'], err))
                 ilc += 1
             if self.line_cnt['cur'] % self.strategy.batch_size == 0:
                 self.line_cnt['invalid'] += ilc
@@ -231,6 +232,7 @@ class Strategy(object):
         self.reprocess_invalid = config.get('reprocess_invalid', False)
         self.force_reprocess = config.get('force_reprocess', False)
         self.upsert = config.get('upsert', False)
+        self.log_invalid_lines = config.get('log_invalid_lines', True)
         self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
         self.template = re.compile(r'{{(.*)}}')
 
