@@ -1,7 +1,7 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.5.4"
-__status__ = "Pre-Alpha"
+__version__ = "0.5.5"
+__status__ = "Alpha"
 
 import logging
 from multiprocessing.pool import ThreadPool

@@ -7,7 +7,7 @@ with open(path.join(here, 'README.rst')) as f:
 
 setup(
     name='iow-mongo-tools',
-    version='0.5.4',
+    version='0.5.5',
     description='Various tools for maintenance mongo cluster',
     long_description=long_description,
     url='https://confluence.iponweb.net/display/OPS/iow-mongo-tools',
@@ -15,7 +15,7 @@ setup(
     author_email='dashcheulov@iponweb.net',
     license='GPL-3.0+',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: IOW SysOps',
         'Intended Audience :: IOW PMs',
         'License :: OSI Approved :: GPL-3.0+',

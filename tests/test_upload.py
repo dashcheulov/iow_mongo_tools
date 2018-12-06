@@ -86,14 +86,18 @@ def test_segfile_counter():
             self.matched_count = matched_count
             self.modified_count = modified_count
             self.upserted_count = upserted_count
+
     sample_counter = upload.SegmentFile.Counter()
     for result in ((1, 0, 1), (1, 0, 0), (0, 0, 1)):
         sample_counter.count_bulk_write_result(MockResult(*result))
     assert (sample_counter.matched, sample_counter.modified, sample_counter.upserted) == (2, 0, 2)
-    assert str(sample_counter) == 'Documents: matched - 2, upserted - 2.'
+    assert str(sample_counter) == 'Lines: total - 0, invalid - 0. Documents: matched - 2, upserted - 2.'
+    sample_counter.line_total += 1
     sample_counter2 = upload.SegmentFile.Counter()
+    sample_counter2.line_total += 1
     for result in ((1, 2, 0), (0, 1, 0), (2, 0, 0)):
         sample_counter2.count_bulk_write_result(MockResult(*result))
     assert (sample_counter2.matched, sample_counter2.modified, sample_counter2.upserted) == (3, 3, 0)
-    assert str(sample_counter2) == 'Documents: matched - 3, modified - 3.'
-    assert str(sample_counter + sample_counter2) == 'Documents: matched - 5, modified - 3, upserted - 2.'
+    assert str(sample_counter2) == 'Lines: total - 1, invalid - 0. Documents: matched - 3, modified - 3.'
+    assert str(sample_counter + sample_counter2) == \
+           'Lines: total - 2, invalid - 0. Documents: matched - 5, modified - 3, upserted - 2.'

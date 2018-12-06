@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.5 (2018-12-06)
+------------------
+- added parameter 'process_invalid_file_to_end' and some logic around it. #EMX-2800
+- added lines to total Counter.
+
 0.5.4 (2018-12-05)
 ------------------
 - fixed working of param '--force' of 'mongo_clone'.

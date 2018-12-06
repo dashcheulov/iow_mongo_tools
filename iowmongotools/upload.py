@@ -65,6 +65,9 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             self.matched = 0
             self.modified = 0
             self.upserted = 0
+            self.line_cur = 0
+            self.line_invalid = 0
+            self.line_total = 0
 
         def __add__(self, other):
             obj = SegmentFile.Counter()
@@ -73,12 +76,13 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             return obj
 
         def __str__(self):
-            out = list()
+            docs = list()
             for name, val in self.__dict__.items():
-                if not val and name != 'matched':
+                if not val and name != 'matched' or 'line' in name:
                     continue
-                out.append('{} - {}'.format(name, val))
-            return 'Documents: {}.'.format(', '.join(out))
+                docs.append('{} - {}'.format(name, val))
+            return 'Lines: total - {}, invalid - {}. Documents: {}.'.format(self.line_total, self.line_invalid,
+                                                                            ', '.join(docs))
 
         def count_bulk_write_result(self, result):
             self.matched += result.matched_count
@@ -90,7 +94,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         if not isinstance(strategy, Strategy):
             raise TypeError('strategy should be an instance of class Strategy')
         if not os.path.isfile(path):
-            raise FileNotFoundError('File %s doesn\'t exist.' % path)
+            raise FileNotFoundError('File {} doesn\'t exist.'.format(path))
         self.logger = None
         self.path = path
         self.provider = provider
@@ -101,7 +105,6 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             raise WrongFileType(self.name, self.type[0], strategy.allowed_types)
         self.invalid = False
         self.processed = False
-        self.line_cnt = {'cur': 0, 'invalid': 0, 'total': 0}
         self.timer = Timer()
         self.counter = self.Counter()
 
@@ -111,10 +114,10 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
     def get_line(self):
         if self.type[1] == 'gzip':
             open_func = gzip.open
-            self.log('debug', 'The file is type of %s. Opening with gzip.'.format(self.type))
+            self.log('debug', 'The file is type of {}. Opening with gzip.'.format(self.type))
         else:
             open_func = open
-            self.log('debug', 'The file is type of %s. Opening.'.format(self.type))
+            self.log('debug', 'The file is type of {}. Opening.'.format(self.type))
         with open_func(self.path, 'rt') as f_in:
             line = f_in.readline()
             while line:
@@ -127,7 +130,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             return self.strategy.get_setter(line_str.split(self.SEPARATORS_MAP[self.type[0]]),
                                             self.strategy.input[self.type[0]])
         except BadLine:
-            raise BadLine('Line \'%s\' is invalid.' % line_str)
+            raise BadLine('Line \'{}\' is invalid.'.format(line_str))
 
     def get_batch(self):
         ilc = 0  # counter of invalid lines in a batch
@@ -140,36 +143,41 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         last_log_ts = time.time()
         last_line_cnt = 0
         for line in self.get_line():
-            self.line_cnt['cur'] += 1
+            self.counter.line_cur += 1
             try:
                 line = self.get_setter(line)
                 batch.append(UpdateOne({'_id': line.pop('_id')}, line, upsert=self.strategy.upsert))
             except BadLine as err:
                 if self.strategy.log_invalid_lines:
-                    self.log('warning', '#{}. {}'.format(self.line_cnt['cur'], err))
+                    self.log('warning', '#{}. {}'.format(self.counter.line_cur, err))
                 ilc += 1
-            if self.line_cnt['cur'] % self.strategy.batch_size == 0:
-                self.line_cnt['invalid'] += ilc
-                if ilc / self.strategy.batch_size >= self.strategy.threshold_percent_invalid_lines_in_batch * 100:
+            if self.counter.line_cur % self.strategy.batch_size == 0:
+                self.counter.line_invalid += ilc
+                if not self.invalid and ilc / self.strategy.batch_size >= self.strategy.threshold_percent_invalid_lines_in_batch / 100:
                     self.invalid = True
-                    self.timer.stop()
-                    raise InvalidSegmentFile('%s of %s lines in a batch are invalid. Marking the file as invalid' %
-                                             (ilc, self.strategy.batch_size))
-                if time.time() - last_log_ts > 30:
-                    speed = int((self.line_cnt['cur'] - last_line_cnt) / (time.time() - last_log_ts))
-                    last_line_cnt = self.line_cnt['cur']
-                    last_log_ts = time.time()
-                    percent = '{:.0f}%'.format(self.line_cnt['cur'] * 100 / self.line_cnt['total']) if self.line_cnt[
-                        'total'] else ''
+                    self.log('error', '{} of {} lines in a batch are invalid. Marking the file as invalid'.format(ilc,
+                                                                                                                  self.strategy.batch_size))
+                    if not self.strategy.process_invalid_file_to_end:
+                        self.timer.stop()
+                        raise InvalidSegmentFile('Stop processing the file')
                     self.log('info',
-                             'Processing line #%-15s %-4s %10d lines/s' % (self.line_cnt['cur'], percent, speed))
+                             'Option \'process_invalid_file_to_end\' is enabled. Switching off logging of invalid lines and going on processing the file.')
+                    self.strategy.log_invalid_lines = False
+                if time.time() - last_log_ts > 30:
+                    speed = int((self.counter.line_cur - last_line_cnt) / (time.time() - last_log_ts))
+                    last_line_cnt = self.counter.line_cur
+                    last_log_ts = time.time()
+                    percent = '{:.0f}%'.format(
+                        self.counter.line_cur * 100 / self.counter.line_total) if self.counter.line_total else ''
+                    self.log('info',
+                             'Processing line #%-15s %-4s %10d lines/s' % (self.counter.line_cur, percent, speed))
                 if batch:
                     yield batch
                 ilc = 0
                 batch = list()
-        self.line_cnt['invalid'] += ilc
+        self.counter.line_invalid += ilc
         if batch:
-            self.log('debug', 'Line {}: {}'.format(self.line_cnt['cur'], batch[-1]))
+            self.log('debug', 'Line {}: {}'.format(self.counter.line_cur, batch[-1]))
             yield batch
         self.timer.stop()
 
@@ -177,18 +185,18 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         if data:
             self.invalid = data.get('invalid', self.invalid)
             self.processed = data.get('processed', self.processed)
-            self.timer.__dict__ = data.get('timer', self.timer.__dict__)
-            self.counter.__dict__ = data.get('counter', self.counter.__dict__)
-            if self.processed and not self.invalid:
-                self.line_cnt['total'] = data['lines']['total']
+            self.timer.__dict__.update(data.get('timer', {}))
+            self.counter.__dict__.update(data.get('counter', {}))
+            if not self.processed or self.invalid:
+                self.counter.line_total = 0
             if self.provider != (data.get('provider') or self.provider):
                 raise InvalidSegmentFile(
                     'File \'%s\' belonged to provider \'%s\'. Now you\'re trying to load it as \'%s\'' % (
                         self.name, data.get('provider'), self.provider))
 
     def dump_metadata(self):
-        if not self.invalid:
-            self.line_cnt['total'] = self.line_cnt['cur']
+        if self.strategy.process_invalid_file_to_end or not self.invalid:
+            self.counter.line_total = self.counter.line_cur
         return {
             '_id': self.name,
             'path': self.path,
@@ -196,7 +204,6 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             'type': self.type,
             'invalid': self.invalid,
             'processed': self.processed,
-            'lines': self.line_cnt,
             'timer': self.timer.__dict__,
             'counter': self.counter.__dict__
         }
@@ -231,6 +238,7 @@ class Strategy(object):
         self.batch_size = config.get('batch_size', 1000)
         self.reprocess_invalid = config.get('reprocess_invalid', False)
         self.force_reprocess = config.get('force_reprocess', False)
+        self.process_invalid_file_to_end = config.get('process_invalid_file_to_end', True)
         self.upsert = config.get('upsert', False)
         self.log_invalid_lines = config.get('log_invalid_lines', True)
         self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
@@ -342,17 +350,17 @@ class Timer(object):
 class Counter(object):
 
     def __init__(self):
+        self._segfile_counters = list()
         self.invalid = 0
         self.skipped = 0
-        self._segfile_counters = list()
 
     def count_result(self, item):
-        if item == 1:
+        if item[0] == 1:
             self.invalid += 1
-        if item == 0:
+        if item == (0, None):
             self.skipped += 1
-        if isinstance(item, SegmentFile.Counter):
-            self._segfile_counters.append(item)
+        if isinstance(item[1], SegmentFile.Counter):
+            self._segfile_counters.append(item[1])
 
     def __str__(self):
         out = list()
@@ -481,6 +489,9 @@ class Uploader(app.App):
 
     @staticmethod
     def process_file(cluster_name, segfile):
+        """
+        :return: (error_code, counter)
+        """
         cl = cluster.Cluster.objects[cluster_name]
         logger = logging.getLogger('worker')
         logger.extra = {'provider': segfile.provider, 'segfile': segfile.name, 'cluster': cl.name}
@@ -489,13 +500,13 @@ class Uploader(app.App):
             cl.read_segfile_info(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
-            return 1
+            return 1, None
         if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
             logger.debug('The file has already been uploaded. Skipping.')
-            return 0
+            return 0, None
         if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
             logger.debug('The file is invalid. Skipping.')
-            return 0
+            return 0, None
         if segfile.invalid:
             logger.info('The file was invalid. Reprocessing.')
         elif segfile.processed:
@@ -507,11 +518,10 @@ class Uploader(app.App):
             cl.upload_segfile(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
-            return 1
+            return 1, segfile.counter
         else:
             segfile.processed = True
         finally:
             cl.save_segfile_info(segfile)
-            logger.info('Finished %s lines from %s, %s invalid lines. %s %s', segfile.line_cnt['cur'],
-                        segfile.path, segfile.line_cnt['invalid'], segfile.counter, segfile.timer)
-        return segfile.counter
+            logger.info('Finished %s. %s %s', segfile.path, segfile.counter, segfile.timer)
+        return 1 if segfile.invalid else 0, segfile.counter
