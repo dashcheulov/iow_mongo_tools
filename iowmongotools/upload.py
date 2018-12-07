@@ -423,7 +423,7 @@ class Uploader(app.App):
             self.config.upload[key]['collection'] = self.config.upload[key].get(
                 'collection') or self.config.segments_collection
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
-        self.pool = Pool(processes=len(cluster.Cluster.objects))  # forking
+        self.pool = Pool(processes=self.config.workers)  # forking
         if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
             if len(self.config.providers) != 1:
                 logger.error('You\'re using --reprocess_file, please set only one of \'%s\' provider with --providers',

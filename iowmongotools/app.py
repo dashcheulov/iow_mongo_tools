@@ -183,7 +183,7 @@ class SettingsCli(Settings):
             self.__dict__.update(config)
         exclusions = self.extra_run(parser, argv)
         for key, value in self.__dict__.items():
-            if not self.description.get(key):
+            if not self.description.get(key) or key in ('config_file', 'description', *exclusions):
                 continue
             if value is True:
                 parser.add_argument("--no-{}".format(key), dest=key, action='store_false', default=value,
@@ -193,7 +193,7 @@ class SettingsCli(Settings):
                                     help=self.description.get(key))
             elif isinstance(value, (list, tuple, set, frozenset)):
                 parser.add_argument("--{}".format(key), default=value, nargs='*', help=self.description.get(key))
-            elif key not in ('config_file', 'description', *exclusions):
+            else:
                 parser.add_argument("--{}".format(key), default=value, help=self.description.get(key))
         parser.parse_args(argv, self)
         self.cleanup()
@@ -235,10 +235,13 @@ class SettingCliCluster(SettingsCli):
 class SettingCliUploader(SettingCliCluster):
 
     def extra_run(self, parser, argv):
+        exclusions = self.add_clusters(parser, argv)
+        parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
+        parser.add_argument("--{}".format('workers'), default=len(self.clusters), help='Amount of workers', type=int)
         if getattr(self, 'upload'):
             parser.add_argument("--{}".format('providers'), default=[p for p in self.upload.keys()],
                             help='List of providers of segments for processing', nargs='*')
-        return self.add_clusters(parser, argv)
+        return (*exclusions, 'workers', 'providers')
 
 
 class Command(object):

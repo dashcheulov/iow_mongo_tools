@@ -4,6 +4,8 @@ import os
 import logging
 import glob
 import time
+from abc import ABC, abstractmethod
+from collections import OrderedDict
 from multiprocessing import Process, Event, SimpleQueue
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -27,6 +29,9 @@ class EventHandler(object):
     def on_file_discovered(self, path):
         self.items_ready.set()
 
+    def sort(self, files):
+        return sorted(list(files))
+
     def dispatch(self, path, type_name):
         method_map = {
             'IN_CLOSE_WRITE': 'on_file_discovered',
@@ -35,7 +40,7 @@ class EventHandler(object):
         getattr(self, method_map[type_name])(path)
 
 
-class Observer(Process):
+class Observer(Process, ABC):
 
     def __init__(self, handler):
         super().__init__()
@@ -43,8 +48,24 @@ class Observer(Process):
         if not isinstance(handler, EventHandler):
             raise TypeError("Only instances of '%s' class are allowed" % EventHandler.__name__)
         self.observable = handler
+        self._files_prev = set()
         # Automatically starting
         self.start()
+
+    @property
+    @abstractmethod
+    def files(self):
+        """ :return set of files """
+        return set()
+
+    def get_new_files(self):
+        files = self.files
+        new_files = self.observable.sort(files.difference(self._files_prev))
+        if not new_files:
+            logger.debug('%s: No new files', self)
+            return ()
+        self._files_prev = files
+        return new_files
 
 
 class LocalFilesObserver(Observer):
@@ -56,7 +77,6 @@ class LocalFilesObserver(Observer):
         self.filename = config.get('filename', '**')
         self.recursive = config.get('recursive', False)
         self.polling_interval = config.get('polling_interval', 5)
-        self._files_prev = set()
         super().__init__(handler)
 
     @property
@@ -65,34 +85,24 @@ class LocalFilesObserver(Observer):
             filename for filename in glob.glob(os.path.join(self.path, self.filename), recursive=self.recursive) if
             os.path.isfile(filename))
 
-    def get_new_file(self, check_for_changing=True):
-        files = self.files
-        new_files = files.difference(self._files_prev)
-        if not new_files:
-            logger.debug('No new files in %s', self.path)
-            return ()
-        self._files_prev = files
-        if not check_for_changing:
-            for new_file in new_files:
-                yield new_file
-        else:
-            files = dict()
-            for fl in new_files:
-                files[fl] = os.path.getsize(fl)
-            while files:
-                time.sleep(self.polling_interval / 2)
-                for fl, size in files.copy().items():
-                    if os.path.getsize(fl) == size:
-                        files.pop(fl)
-                        yield fl
-                    else:
-                        files[fl] = os.path.getsize(fl)
-                        self.observable.dispatch(fl, 'IN_MODIFY')
-
     def run(self):
         while True:
             self.observable.items_ready.clear()
-            for path in self.get_new_file():
+            for path in self.get_ready_file(self.get_new_files()):
                 self.observable.dispatch(path, 'IN_CLOSE_WRITE')
             self.observable.items_ready.set()
             time.sleep(self.polling_interval)
+
+    def get_ready_file(self, new_files):
+        files = OrderedDict()
+        for fl in new_files:
+            files[fl] = os.path.getsize(fl)
+        while files:
+            time.sleep(self.polling_interval / 2)
+            for fl, size in files.copy().items():
+                if os.path.getsize(fl) == size:
+                    del (files[fl])
+                    yield fl
+                else:
+                    files[fl] = os.path.getsize(fl)
+                    self.observable.dispatch(fl, 'IN_MODIFY')
