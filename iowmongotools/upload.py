@@ -231,7 +231,7 @@ class Strategy(object):
                 self.input[file_type]['titles'].append(title)
                 self.input[file_type]['patterns'].append(re.compile(pattern))
         self.output = config['update']
-        if not '_id' in self.output:
+        if '_id' not in self.output:
             raise AttributeError('Section \'update\' must have field \'_id\'')
         self.database, self.collection = config['collection'].split('.')
         self.template_params = self.prepare_template_params(config.get('templates', dict()))
@@ -297,12 +297,41 @@ class Strategy(object):
 
 
 class FileEmitter(fs.EventHandler):
+    class Sorter(object):
+        def __init__(self, config):
+            if 'file_path_regexp' not in config or 'order' not in config:
+                raise AttributeError('Section \'sorting\' must have \'file_path_regexp\' and \'order\'')
+            self.file_path_regexp = re.compile(config['file_path_regexp'])
+            self.order = config['order']
+
+        def _get_variables(self, path):
+            stat = os.stat(path)
+            stat_dict = dict()
+            for field in ('st_size', 'st_atime', 'st_mtime', 'st_ctime'):
+                stat_dict[field] = getattr(stat, field)
+            return {'origin': path, 'path': self.file_path_regexp.match(path).groups(), 'stat': stat_dict}
+
+        def sort(self, files):
+            lst = list()
+            for path in files:
+                lst.append(self._get_variables(path))
+            for rule in self.order[::-1]:
+                for field, order in rule.items():
+                    field = field.split('.')
+                    try:
+                        field[1] = int(field[1])
+                    except ValueError:
+                        pass
+                    lst.sort(key=lambda x: x[field[0]][field[1]], reverse=(True if order == 'desc' else False))
+            return [f['origin'] for f in lst]
 
     def __init__(self, provider, upload_config):
         super().__init__()
         self.provider = provider
         self.errors = Event()
         self.delivery_config = upload_config.pop('delivery')
+        self.sorting = self.Sorter(upload_config['sorting']) if 'sorting' in upload_config else None
+        self.sort = self.sorting.sort if self.sorting else lambda x: x
         self.strategy = Strategy(upload_config)
         logger.debug('Loaded strategy for %s', provider)
         self.start_observers()
@@ -365,10 +394,10 @@ class Counter(object):
     def __str__(self):
         out = list()
         for name, val in self.__dict__.items():
-            if not val:
-                continue
             if name == '_segfile_counters':
                 out.append('{} - {}'.format('processed', len(val)))
+                continue
+            if not val:
                 continue
             out.append('{} - {}'.format(name, val))
         segfile_counters = sum(self._segfile_counters, self._segfile_counters.pop()) if self._segfile_counters else ''

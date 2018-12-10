@@ -1,6 +1,13 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.6 (2018-12-10)
+------------------
+- added sorting of files by fields from stats and parts of path. #EMX-2800
+- fixed SettingsClass of mongo_clone, broken in 0.5.0.
+- fixed that final log entry had returned nothing in 'total files' at idle running, now - 0.
+- added cmd parameter 'workers' which equals to amount of clusters by default.
+
 0.5.5 (2018-12-06)
 ------------------
 - added parameter 'process_invalid_file_to_end' and some logic around it. #EMX-2800

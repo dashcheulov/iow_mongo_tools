@@ -1,6 +1,7 @@
 from iowmongotools import upload
 import pytest
 import time
+import os
 
 
 def test_strategy_without_defined_update():
@@ -101,3 +102,40 @@ def test_segfile_counter():
     assert str(sample_counter2) == 'Lines: total - 1, invalid - 0. Documents: matched - 3, modified - 3.'
     assert str(sample_counter + sample_counter2) == \
            'Lines: total - 2, invalid - 0. Documents: matched - 5, modified - 3, upserted - 2.'
+
+
+def test_fileemmiter_sorter(tmpdir):
+    sfiles = dict()
+    for sfile in ('s12083479file_p2.tgz', 's12083480file_p1.tgz', 'a12083480file_p1.log.gz', 'a12083479file_p3.log.gz',
+                  's12083479file_p0.log.gz', 'a12083480file_p0.log.gz', 'a12083480file_p1.tgz'):
+        sfiles[sfile] = tmpdir.join(sfile)
+        sfiles[sfile].write('s')
+        sfiles[sfile] = str(sfiles[sfile].realpath())
+    sort1 = upload.FileEmitter.Sorter(
+        {'file_path_regexp': '^.*/([a-z])([0-9]+).*p([0-9])\..*$',
+         'order': ({'path.1': 'asc'}, {'path.2': 'asc'}, {'path.0': 'asc'}, {'stat.st_mtime': 'desc'})})
+    assert list(map(os.path.basename, sort1.sort(sfiles.values()))) == ['s12083479file_p0.log.gz',
+                                                                        's12083479file_p2.tgz',
+                                                                        'a12083479file_p3.log.gz',
+                                                                        'a12083480file_p0.log.gz',
+                                                                        'a12083480file_p1.tgz',
+                                                                        'a12083480file_p1.log.gz',
+                                                                        's12083480file_p1.tgz']
+    sort2 = upload.FileEmitter.Sorter(
+        {'file_path_regexp': '^.*/([a-z])([0-9]+).*p([0-9])\..*$',
+         'order': ({'path.2': 'desc'}, {'path.0': 'asc'}, {'stat.st_mtime': 'asc'})})
+    assert list(map(os.path.basename, sort2.sort(sfiles.values()))) == ['a12083479file_p3.log.gz',
+                                                                        's12083479file_p2.tgz',
+                                                                        'a12083480file_p1.log.gz',
+                                                                        'a12083480file_p1.tgz',
+                                                                        's12083480file_p1.tgz',
+                                                                        'a12083480file_p0.log.gz',
+                                                                        's12083479file_p0.log.gz']
+    sort3 = upload.FileEmitter.Sorter({'file_path_regexp': '^.*', 'order': ({'stat.st_mtime': 'desc'},)})
+    assert list(map(os.path.basename, sort3.sort(sfiles.values()))) == ['a12083480file_p1.tgz',
+                                                                        'a12083480file_p0.log.gz',
+                                                                        's12083479file_p0.log.gz',
+                                                                        'a12083479file_p3.log.gz',
+                                                                        'a12083480file_p1.log.gz',
+                                                                        's12083480file_p1.tgz',
+                                                                        's12083479file_p2.tgz']

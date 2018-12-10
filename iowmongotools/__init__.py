@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 __status__ = "Alpha"
 
 import logging
@@ -81,6 +81,7 @@ class MongoSetCli(app.AppCli):
 
 
 class MongoCloneCli(app.AppCli):
+    SettingsClass = app.SettingCliCluster
 
     @property
     def default_config(self):
