@@ -36,6 +36,13 @@ def test_strategy_get_hash_of_segments():
                                                                           '2452_4234': expiration_ts2}
 
 
+def test_strategy_timestamp():
+    sample_strategy = upload.Strategy(
+        {'input': {'text/csv': {}}, 'update': {'_id': '{{timestamp}}'}, 'collection': 'a.b'})
+    current_ts = int(time.time())
+    assert sample_strategy.get_setter('', {'titles': {}}) == {'_id': current_ts}
+
+
 def test_strategy_parse_output():
     sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
     assert sample_strategy._parse_output(

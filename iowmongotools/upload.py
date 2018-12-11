@@ -297,7 +297,8 @@ class Strategy(object):
         }
         if name not in method_map.keys():
             raise UnknownTemplate(name)
-        return method_map[name]([v for k, v in line.items() if k in self.template_params[name]['from_fields']])
+        return method_map[name](
+            [v for k, v in line.items() if k in self.template_params.get(name, {}).get('from_fields', [])])
 
 
 class FileEmitter(fs.EventHandler):

@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.8 (2018-12-11)
+------------------
+- fixed template 'timestamp'.
+
 0.5.7 (2018-12-11)
 ------------------
 - added template 'timestamp'. #ROME-244
