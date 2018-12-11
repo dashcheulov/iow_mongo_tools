@@ -248,8 +248,7 @@ class Strategy(object):
     def prepare_template_params(config):
         config['hash_of_segments'] = {
             'segment_separator': config.get('hash_of_segments', dict()).get('segment_separator', ','),
-            'expiration_ts': int(
-                time.time() + app.human_to_seconds(config.get('hash_of_segments', dict()).pop('retention', '30D'))),
+            'retention': app.human_to_seconds(config.get('hash_of_segments', dict()).pop('retention', '30D')),
             'from_fields': config.get('hash_of_segments', dict()).get('from_fields', ['segments'])
         }
         return config
@@ -262,8 +261,12 @@ class Strategy(object):
         """
         output = dict()
         for segment in fields[0].split(self.template_params['hash_of_segments']['segment_separator']):
-            output[segment] = self.template_params['hash_of_segments']['expiration_ts']
+            output[segment] = int(time.time() + self.template_params['hash_of_segments']['retention'])
         return output
+
+    @staticmethod
+    def _timestamp(fields):
+        return int(time.time())
 
     def get_setter(self, line, config):
         if len(config['titles']) != len(line):
@@ -289,7 +292,8 @@ class Strategy(object):
 
     def _dispatch_template(self, name, line):
         method_map = {
-            'hash_of_segments': self._get_hash_of_segments
+            'hash_of_segments': self._get_hash_of_segments,
+            'timestamp': self._timestamp
         }
         if name not in method_map.keys():
             raise UnknownTemplate(name)

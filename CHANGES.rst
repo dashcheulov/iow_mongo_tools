@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.7 (2018-12-11)
+------------------
+- added template 'timestamp'. #ROME-244
+- update time at every doc in template 'hash_of_segments'.
+
 0.5.6 (2018-12-10)
 ------------------
 - added sorting of files by fields from stats and parts of path. #EMX-2800

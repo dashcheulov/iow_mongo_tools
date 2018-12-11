@@ -10,17 +10,15 @@ def test_strategy_without_defined_update():
 
 
 def test_strategy_prepare_template_params():
-    expiration_ts_default = int(time.time() + 2592000)  # 30 days
-    expiration_ts = int(time.time() + 90000)  # 1 day 1 hour
     sample_strategy_default = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
     sample_strategy = upload.Strategy(
         {'input': {'text/csv': {}}, 'templates': {'hash_of_segments': {'segment_separator': ':', 'retention': '1D1h'}},
          'update': {'_id': ''}, 'collection': 'a.b'})
     assert sample_strategy_default.template_params == {
-        'hash_of_segments': {'expiration_ts': expiration_ts_default, 'segment_separator': ',',
+        'hash_of_segments': {'retention': 2592000, 'segment_separator': ',',
                              'from_fields': ['segments']}}
     assert sample_strategy.template_params == {
-        'hash_of_segments': {'expiration_ts': expiration_ts, 'segment_separator': ':', 'from_fields': ['segments']}}
+        'hash_of_segments': {'retention': 90000, 'segment_separator': ':', 'from_fields': ['segments']}}
 
 
 def test_strategy_get_hash_of_segments():
@@ -131,7 +129,7 @@ def test_fileemmiter_sorter(tmpdir):
                                                                         's12083480file_p1.tgz',
                                                                         'a12083480file_p0.log.gz',
                                                                         's12083479file_p0.log.gz']
-    sort3 = upload.FileEmitter.Sorter({'file_path_regexp': '^.*', 'order': ({'stat.st_mtime': 'desc'},)})
+    sort3 = upload.FileEmitter.Sorter({'file_path_regexp': '^.*', 'order': ({'stat.st_ctime': 'desc'},)})
     assert list(map(os.path.basename, sort3.sort(sfiles.values()))) == ['a12083480file_p1.tgz',
                                                                         'a12083480file_p0.log.gz',
                                                                         's12083479file_p0.log.gz',
