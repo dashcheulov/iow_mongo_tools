@@ -9,33 +9,6 @@ def test_strategy_without_defined_update():
         upload.Strategy({'input': {}})
 
 
-def test_strategy_prepare_template_params():
-    sample_strategy_default = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
-    sample_strategy = upload.Strategy(
-        {'input': {'text/csv': {}}, 'templates': {'hash_of_segments': {'segment_separator': ':', 'retention': '1D1h'}},
-         'update': {'_id': ''}, 'collection': 'a.b'})
-    assert sample_strategy_default.template_params == {
-        'hash_of_segments': {'retention': 2592000, 'segment_separator': ',',
-                             'from_fields': ['segments']}}
-    assert sample_strategy.template_params == {
-        'hash_of_segments': {'retention': 90000, 'segment_separator': ':', 'from_fields': ['segments']}}
-
-
-def test_strategy_get_hash_of_segments():
-    sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
-    sample_strategy2 = upload.Strategy(
-        {'input': {'text/csv': {}}, 'templates': {'hash_of_segments': {'retention': '5D2m4s'}}, 'update': {'_id': ''},
-         'collection': 'a.b'})
-    expiration_ts = int(time.time() + 2592000)  # 30 days
-    expiration_ts2 = int(time.time() + 432124)  # 5D2m4s
-    assert sample_strategy._get_hash_of_segments(['678269,678272,765488,408098']) == {'678269': expiration_ts,
-                                                                                      '678272': expiration_ts,
-                                                                                      '765488': expiration_ts,
-                                                                                      '408098': expiration_ts}
-    assert sample_strategy2._get_hash_of_segments(['2341,2452_4234']) == {'2341': expiration_ts2,
-                                                                          '2452_4234': expiration_ts2}
-
-
 def test_strategy_timestamp():
     sample_strategy = upload.Strategy(
         {'input': {'text/csv': {}}, 'update': {'_id': '{{timestamp}}'}, 'collection': 'a.b'})

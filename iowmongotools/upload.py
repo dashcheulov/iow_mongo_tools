@@ -10,7 +10,7 @@ import time
 import mimetypes
 from multiprocessing import Pool, Event
 from pymongo.operations import UpdateOne
-from iowmongotools import app, cluster, fs
+from iowmongotools import app, cluster, fs, templates
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -234,7 +234,10 @@ class Strategy(object):
         if '_id' not in self.output:
             raise AttributeError('Section \'update\' must have field \'_id\'')
         self.database, self.collection = config['collection'].split('.')
-        self.template_params = self.prepare_template_params(config.get('templates', dict()))
+        templates_params = config.get('templates', dict())
+        self.templates = dict()
+        for name in templates.MAP.keys():
+            self.templates[name] = templates.MAP[name](templates_params.get(name))
         self.batch_size = config.get('batch_size', 1000)
         self.reprocess_invalid = config.get('reprocess_invalid', False)
         self.force_reprocess = config.get('force_reprocess', False)
@@ -242,31 +245,6 @@ class Strategy(object):
         self.upsert = config.get('upsert', False)
         self.log_invalid_lines = config.get('log_invalid_lines', True)
         self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
-        self.template = re.compile(r'{{(.*)}}')
-
-    @staticmethod
-    def prepare_template_params(config):
-        config['hash_of_segments'] = {
-            'segment_separator': config.get('hash_of_segments', dict()).get('segment_separator', ','),
-            'retention': app.human_to_seconds(config.get('hash_of_segments', dict()).pop('retention', '30D')),
-            'from_fields': config.get('hash_of_segments', dict()).get('from_fields', ['segments'])
-        }
-        return config
-
-    def _get_hash_of_segments(self, fields):
-        """
-
-        :param fields: list of fields of line used in this function. Determined in parameter 'from_fields' in order.
-        :return: generated hash of segments
-        """
-        output = dict()
-        for segment in fields[0].split(self.template_params['hash_of_segments']['segment_separator']):
-            output[segment] = int(time.time() + self.template_params['hash_of_segments']['retention'])
-        return output
-
-    @staticmethod
-    def _timestamp(fields):
-        return int(time.time())
 
     def get_setter(self, line, config):
         if len(config['titles']) != len(line):
@@ -285,20 +263,15 @@ class Strategy(object):
                 item[key] = self._parse_output(value, dict_line)
             return item
         if isinstance(item, str):
-            matched = self.template.match(item)
+            matched = templates.REGEXP.match(item)
             if matched:
                 return dict_line.get(matched.group(1)) or self._dispatch_template(matched.group(1), dict_line)
         return item
 
-    def _dispatch_template(self, name, line):
-        method_map = {
-            'hash_of_segments': self._get_hash_of_segments,
-            'timestamp': self._timestamp
-        }
-        if name not in method_map.keys():
+    def _dispatch_template(self, name, dict_line):
+        if name not in self.templates.keys():
             raise UnknownTemplate(name)
-        return method_map[name](
-            [v for k, v in line.items() if k in self.template_params.get(name, {}).get('from_fields', [])])
+        return self.templates[name].apply(dict_line)
 
 
 class FileEmitter(fs.EventHandler):
