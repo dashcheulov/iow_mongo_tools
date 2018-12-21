@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.9 (2018-12-21)
+------------------
+- moved templates to separate module as classes.
+- added posibility of extension of templates with external module. Parameter 'module_templates'.
+
 0.5.8 (2018-12-11)
 ------------------
 - fixed template 'timestamp'.

@@ -2,11 +2,24 @@
 """ Templates of transformation a line from a segment file to a piece of json """
 import time
 import re
+import sys
+import importlib.util
+import importlib.machinery
 from abc import ABC, abstractmethod
 from iowmongotools import app
 
 
 REGEXP = re.compile(r'{{([^}]+)}}')
+
+
+def load_module(path):
+    loader = importlib.machinery.SourceFileLoader(path.split('/')[-1].split('.')[0], path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    for name, klass in mod.MAP.items():
+        MAP[name] = klass
+    sys.modules[mod.__name__] = mod
 
 
 class Template(ABC):
@@ -44,10 +57,3 @@ MAP = {
     'hash_of_segments': HashOfSegments,
     'timestamp': Timestamp
 }
-
-
-# def _resub(self, line):
-#     def _substitute(match_obj):
-#         return dict_line.get(match_obj.group(1)) or self._dispatch_template(match_obj.group(1), dict_line)
-#
-#     item = templates.REGEXP.sub(_substitute, item)

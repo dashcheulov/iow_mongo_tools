@@ -179,6 +179,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         if batch:
             self.log('debug', 'Line {}: {}'.format(self.counter.line_cur, batch[-1]))
             yield batch
+        if self.strategy.process_invalid_file_to_end or not self.invalid:
+            self.counter.line_total = self.counter.line_cur
         self.timer.stop()
 
     def load_metadata(self, data):
@@ -195,8 +197,6 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                         self.name, data.get('provider'), self.provider))
 
     def dump_metadata(self):
-        if self.strategy.process_invalid_file_to_end or not self.invalid:
-            self.counter.line_total = self.counter.line_cur
         return {
             '_id': self.name,
             'path': self.path,
@@ -422,6 +422,9 @@ class Uploader(app.App):
             return 1
         mimetypes.init()
         mimetypes.types_map.update(self.config.mime_types_map)
+        if hasattr(self.config, 'module_templates'):
+            logger.info('Loading external templates from %s', self.config.module_templates)
+            templates.load_module(self.config.module_templates)
         for key in self.config.upload.keys():  # merge providers' settings with global ones
             if 'reprocess_invalid' not in self.config.upload[key]:
                 self.config.upload[key]['reprocess_invalid'] = self.config.reprocess_invalid
