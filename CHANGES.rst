@@ -1,6 +1,14 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.12 (2018-12-23)
+-------------------
+- configured logging on early stage from default_config.
+- made filename visible for templates.
+- filtered and initiated only used templates in Strategy.
+- raised InvalidSegmentFile in case of not matching to sorting pattern.
+- not counting as skipped file if being processed at least at one cluster.
+
 0.5.11 (2018-12-22)
 -------------------
 - fixed Counter for multi clustering and mode 'reprocess_file'.

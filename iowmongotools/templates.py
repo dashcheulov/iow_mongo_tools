@@ -30,6 +30,9 @@ class Template(ABC):
     def apply(self, dict_line):
         raise NotImplementedError('You should implement this!')
 
+    def push_filename(self, filename):
+        pass
+
 
 class HashOfSegments(Template):
     def __init__(self, config=None):

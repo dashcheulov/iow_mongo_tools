@@ -140,6 +140,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
     def get_batch(self):
         ilc = 0  # counter of invalid lines in a batch
         batch = list()
+        self.populate_templates_with_filename()
         self.invalid = False  # give it one more chance
         self.counter.__init__()
         self.timer.__init__()
@@ -217,6 +218,10 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         """ factory method using local or global logger. need in order not to pickle logger object to a processes """
         getattr(self.logger or logger, severity)(message)
 
+    def populate_templates_with_filename(self):
+        for template in self.strategy.templates.values():
+            template.push_filename(self.name)
+
 
 class Strategy(object):
 
@@ -241,7 +246,7 @@ class Strategy(object):
         self.database, self.collection = config['collection'].split('.')
         templates_params = config.get('templates', dict())
         self.templates = dict()
-        for name in templates.MAP.keys():
+        for name in set(templates.MAP.keys()).intersection(self.set_of_used_templates(self.output)):
             self.templates[name] = templates.MAP[name](templates_params.get(name))
         self.batch_size = config.get('batch_size', 1000)
         self.reprocess_invalid = config.get('reprocess_invalid', False)
@@ -278,6 +283,17 @@ class Strategy(object):
             raise UnknownTemplate(name)
         return self.templates[name].apply(dict_line)
 
+    def set_of_used_templates(self, item):
+        if isinstance(item, dict):
+            out = set()
+            for value in item.values():
+                out.update(self.set_of_used_templates(value))
+            return out
+        if isinstance(item, str):
+            matched = templates.REGEXP.match(item)
+            if matched:
+                return {matched.group(1)}
+
 
 class FileEmitter(fs.EventHandler):
     class Sorter(object):
@@ -292,7 +308,11 @@ class FileEmitter(fs.EventHandler):
             stat_dict = dict()
             for field in ('st_size', 'st_atime', 'st_mtime', 'st_ctime'):
                 stat_dict[field] = getattr(stat, field)
-            return {'origin': path, 'path': self.file_path_regexp.match(path).groups(), 'stat': stat_dict}
+            try:
+                matched = self.file_path_regexp.match(path).groups()
+            except AttributeError:
+                raise InvalidSegmentFile('File {} doesn\'t match to sorting regexp'.format(path))
+            return {'origin': path, 'path': matched, 'stat': stat_dict}
 
         def sort(self, files):
             lst = list()
@@ -388,7 +408,7 @@ class Counter(object):
     def count_result(self, item):
         if item[1] == 1:
             self._invalid_files.add(item[0])
-        if item[1:] == (0, None):
+        if item[1:] == (0, None) and item[0] not in self._segfile_counters:
             self._skipped_files.add(item[0])
         if isinstance(item[2], SegmentFile.Counter):
             if item[0] not in self._segfile_counters:

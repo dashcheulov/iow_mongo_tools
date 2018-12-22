@@ -10,7 +10,6 @@ import yaml
 import re
 from collections import OrderedDict
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -226,7 +225,7 @@ class SettingCliCluster(SettingsCli):
         self.tmp['cluster_config'] = getattr(self, 'cluster_config')
         if os.path.isfile(str(self.tmp['cluster_config'])):
             self.tmp['cluster_config'] = self.read_config_file(self.cluster_config)
-        if self.tmp['cluster_config']:
+        if isinstance(self.tmp['cluster_config'], dict):
             parser.add_argument("--{}".format('clusters'), default=[c for c in self.tmp['cluster_config'].keys()],
                                 help='Cluster names to be processed', nargs='*')
         return 'cluster_config',
@@ -299,6 +298,10 @@ class App(ABC):
     SettingsClass = Settings
 
     def __init__(self):
+        if 'log_level' in self.default_config:
+            logging_config = self.default_config['logging'][0]
+            logging_config['root']['level'] = self.default_config['log_level'][0].upper()
+            logging.config.dictConfig(logging_config)
         self.config = self.SettingsClass(self.default_config)
 
 

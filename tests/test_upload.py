@@ -60,6 +60,15 @@ def test_strategy_get_setter():
                                    sample_strategy.input['text/tab-separated-values'])
 
 
+def test_strategy_list_of_used_templates():
+    sample_strategy = upload.Strategy(
+        {'input': {'text/csv': {}}, 'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}},
+         'collection': 'a.b'})
+    assert sample_strategy.set_of_used_templates(sample_strategy.output) == {'user_id', 'hash_of_segments'}
+    assert sample_strategy.set_of_used_templates(
+        {'_id': "{{s}}", 'q': {'bk': '{{w}}', 'c': '{{g}}'}, 't': '{{g}}', 'v': {'w': '{{n}}'}}) == {'s', 'w', 'g', 'n'}
+
+
 def test_segfile_counter():
     class MockResult(object):
         def __init__(self, matched_count, modified_count, upserted_count):
@@ -122,6 +131,9 @@ def test_fileemmiter_sorter(tmpdir):
                                                                         'a12083480file_p1.log.gz',
                                                                         's12083480file_p1.tgz',
                                                                         's12083479file_p2.tgz']
+    sort4 = upload.FileEmitter.Sorter({'file_path_regexp': '^Liveramp.*', 'order': ({'stat.st_size': 'desc'},)})
+    with pytest.raises(upload.InvalidSegmentFile):
+        list(map(os.path.basename, sort4.sort(sfiles.values())))
 
 
 def test_counter():
