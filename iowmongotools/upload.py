@@ -75,6 +75,11 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                 obj.__dict__[key] = self.__dict__[key] + other.__dict__[key]
             return obj
 
+        def __and__(self, other):
+            for key in ('matched', 'modified', 'upserted'):
+                self.__dict__[key] += other.__dict__[key]
+            return self
+
         def __str__(self):
             docs = list()
             for name, val in self.__dict__.items():
@@ -357,29 +362,48 @@ class Timer(object):
 class Counter(object):
 
     def __init__(self):
-        self._segfile_counters = list()
-        self.invalid = 0
-        self.skipped = 0
+        self._segfile_counters = dict()
+        self._invalid_files = set()
+        self._skipped_files = set()
+
+    @property
+    def invalid(self):
+        return len(self._invalid_files)
+
+    @property
+    def skipped(self):
+        return len(self._skipped_files)
+
+    @property
+    def processed(self):
+        return len(self._segfile_counters)
+
+    @property
+    def segfile_counters(self):
+        if not self._segfile_counters:
+            return ''
+        first = self._segfile_counters.pop(next(iter(self._segfile_counters)))
+        return sum(self._segfile_counters.values(), first)
 
     def count_result(self, item):
-        if item[0] == 1:
-            self.invalid += 1
-        if item == (0, None):
-            self.skipped += 1
-        if isinstance(item[1], SegmentFile.Counter):
-            self._segfile_counters.append(item[1])
+        if item[1] == 1:
+            self._invalid_files.add(item[0])
+        if item[1:] == (0, None):
+            self._skipped_files.add(item[0])
+        if isinstance(item[2], SegmentFile.Counter):
+            if item[0] not in self._segfile_counters:
+                self._segfile_counters[item[0]] = item[2]
+            else:
+                self._segfile_counters[item[0]] &= item[2]
+            self._skipped_files.discard(item[0])
 
     def __str__(self):
         out = list()
-        for name, val in self.__dict__.items():
-            if name == '_segfile_counters':
-                out.append('{} - {}'.format('processed', len(val)))
+        for name in ('processed', 'invalid', 'skipped'):
+            if not getattr(self, name) and name != 'processed':
                 continue
-            if not val:
-                continue
-            out.append('{} - {}'.format(name, val))
-        segfile_counters = sum(self._segfile_counters, self._segfile_counters.pop()) if self._segfile_counters else ''
-        return 'Total files: {}. {}'.format(', '.join(out), segfile_counters)
+            out.append('{} - {}'.format(name, getattr(self, name)))
+        return 'Total files: {}. {}'.format(', '.join(out), self.segfile_counters)
 
 
 class Uploader(app.App):
@@ -435,6 +459,7 @@ class Uploader(app.App):
                 'collection') or self.config.segments_collection
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
         self.pool = Pool(processes=self.config.workers)  # forking
+        counter = Counter()
         if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
             if len(self.config.providers) != 1:
                 logger.error('You\'re using --reprocess_file, please set only one of \'%s\' provider with --providers',
@@ -450,8 +475,9 @@ class Uploader(app.App):
                     logger.error(err)
                     errors += 1
             for result in self.results:
-                errors += result.get()
-            return errors  # end of reprocessing paths.
+                counter.count_result(result.get())
+            logger.info('%s %s', counter, timer)
+            return errors + counter.invalid  # end of reprocessing paths.
         for provider in self.config.upload.copy().keys():
             if provider not in self.config.providers:
                 self.config.upload.pop(provider)
@@ -461,7 +487,6 @@ class Uploader(app.App):
         file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
         self.wait_for_items(file_emitters)
         self.consume_queue(file_emitters)
-        counter = Counter()
         while self.results:
             result_ready = False
             while not result_ready:  # polling of results
@@ -512,13 +537,13 @@ class Uploader(app.App):
             cl.read_segfile_info(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
-            return 1, None
+            return segfile.name, 1, None
         if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
             logger.debug('The file has already been uploaded. Skipping.')
-            return 0, None
+            return segfile.name, 0, None
         if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
             logger.debug('The file is invalid. Skipping.')
-            return 0, None
+            return segfile.name, 0, None
         if segfile.invalid:
             logger.info('The file was invalid. Reprocessing.')
         elif segfile.processed:
@@ -530,10 +555,10 @@ class Uploader(app.App):
             cl.upload_segfile(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
-            return 1, segfile.counter
+            return segfile.name, 1, segfile.counter
         else:
             segfile.processed = True
         finally:
             cl.save_segfile_info(segfile)
             logger.info('Finished %s. %s %s', segfile.path, segfile.counter, segfile.timer)
-        return 1 if segfile.invalid else 0, segfile.counter
+        return segfile.name, 1 if segfile.invalid else 0, segfile.counter

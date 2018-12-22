@@ -2,6 +2,7 @@ from iowmongotools import upload
 import pytest
 import time
 import os
+from copy import copy
 
 
 def test_strategy_without_defined_update():
@@ -80,18 +81,22 @@ def test_segfile_counter():
     assert str(sample_counter2) == 'Lines: total - 1, invalid - 0. Documents: matched - 3, modified - 3.'
     assert str(sample_counter + sample_counter2) == \
            'Lines: total - 2, invalid - 0. Documents: matched - 5, modified - 3, upserted - 2.'
+    assert str(sample_counter & sample_counter2) == \
+           'Lines: total - 1, invalid - 0. Documents: matched - 5, modified - 3, upserted - 2.'
 
 
 def test_fileemmiter_sorter(tmpdir):
     sfiles = dict()
+    i = 0
     for sfile in ('s12083479file_p2.tgz', 's12083480file_p1.tgz', 'a12083480file_p1.log.gz', 'a12083479file_p3.log.gz',
                   's12083479file_p0.log.gz', 'a12083480file_p0.log.gz', 'a12083480file_p1.tgz'):
+        i += 1
         sfiles[sfile] = tmpdir.join(sfile)
-        sfiles[sfile].write('s')
+        sfiles[sfile].write('s' * i)
         sfiles[sfile] = str(sfiles[sfile].realpath())
     sort1 = upload.FileEmitter.Sorter(
         {'file_path_regexp': '^.*/([a-z])([0-9]+).*p([0-9])\..*$',
-         'order': ({'path.1': 'asc'}, {'path.2': 'asc'}, {'path.0': 'asc'}, {'stat.st_ctime': 'desc'})})
+         'order': ({'path.1': 'asc'}, {'path.2': 'asc'}, {'path.0': 'asc'}, {'stat.st_size': 'desc'})})
     assert list(map(os.path.basename, sort1.sort(sfiles.values()))) == ['s12083479file_p0.log.gz',
                                                                         's12083479file_p2.tgz',
                                                                         'a12083479file_p3.log.gz',
@@ -101,7 +106,7 @@ def test_fileemmiter_sorter(tmpdir):
                                                                         's12083480file_p1.tgz']
     sort2 = upload.FileEmitter.Sorter(
         {'file_path_regexp': '^.*/([a-z])([0-9]+).*p([0-9])\..*$',
-         'order': ({'path.2': 'desc'}, {'path.0': 'asc'}, {'stat.st_ctime': 'asc'})})
+         'order': ({'path.2': 'desc'}, {'path.0': 'asc'}, {'stat.st_size': 'asc'})})
     assert list(map(os.path.basename, sort2.sort(sfiles.values()))) == ['a12083479file_p3.log.gz',
                                                                         's12083479file_p2.tgz',
                                                                         'a12083480file_p1.log.gz',
@@ -109,7 +114,7 @@ def test_fileemmiter_sorter(tmpdir):
                                                                         's12083480file_p1.tgz',
                                                                         'a12083480file_p0.log.gz',
                                                                         's12083479file_p0.log.gz']
-    sort3 = upload.FileEmitter.Sorter({'file_path_regexp': '^.*', 'order': ({'stat.st_ctime': 'desc'},)})
+    sort3 = upload.FileEmitter.Sorter({'file_path_regexp': '^.*', 'order': ({'stat.st_size': 'desc'},)})
     assert list(map(os.path.basename, sort3.sort(sfiles.values()))) == ['a12083480file_p1.tgz',
                                                                         'a12083480file_p0.log.gz',
                                                                         's12083479file_p0.log.gz',
@@ -117,3 +122,48 @@ def test_fileemmiter_sorter(tmpdir):
                                                                         'a12083480file_p1.log.gz',
                                                                         's12083480file_p1.tgz',
                                                                         's12083479file_p2.tgz']
+
+
+def test_counter():
+    sample_counter = upload.Counter()
+    for filename in ['file{}'.format(i) for i in range(10)]:
+        for cluster in range(4):
+            segfilecnt = upload.SegmentFile.Counter()
+            segfilecnt.matched = 1
+            segfilecnt.upserted = 1
+            segfilecnt.line_total = 10
+            segfilecnt.line_invalid = 5
+            sample_counter.count_result((filename, 1, segfilecnt))
+    assert str(
+        sample_counter) == 'Total files: processed - 10, invalid - 10. Lines: total - 100, invalid - 50. Documents: matched - 40, upserted - 40.'
+    sample_counter.__init__()
+    sample_counter = upload.Counter()
+    for filename in ['file{}'.format(i) for i in range(5)]:
+        for cluster in range(3):
+            segfilecnt = upload.SegmentFile.Counter()
+            segfilecnt.matched = 0
+            segfilecnt.modified = 2
+            segfilecnt.line_total = 4
+            segfilecnt.line_invalid = 1
+            sample_counter.count_result((filename, 0, segfilecnt))
+    assert str(
+        sample_counter) == 'Total files: processed - 5. Lines: total - 20, invalid - 5. Documents: matched - 0, modified - 30.'
+    sample_counter.__init__()
+    for filename in ['file{}'.format(i) for i in range(5)]:
+        for cluster in range(5):
+            sample_counter.count_result((filename, 0, None))
+    assert str(sample_counter) == 'Total files: processed - 0, skipped - 5. '
+    sample_counter.__init__()
+    for filename in ['file{}'.format(i) for i in range(5)]:
+        sample_counter.count_result((filename, 0, None))
+    for cluster in range(2):
+        segfilecnt = upload.SegmentFile.Counter()
+        segfilecnt.matched = 5
+        segfilecnt.modified = 5
+        segfilecnt.upserted = 1
+        segfilecnt.line_total = 5
+        segfilecnt.line_invalid = 0
+        sample_counter.count_result(('file1', 0, segfilecnt))
+        sample_counter.count_result(('file10', 0, copy(segfilecnt)))
+    assert str(
+        sample_counter) == 'Total files: processed - 2, skipped - 4. Lines: total - 10, invalid - 0. Documents: matched - 20, modified - 20, upserted - 4.'

@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.11 (2018-12-22)
+-------------------
+- fixed Counter for multi clustering and mode 'reprocess_file'.
+- changed ctime to size in test_upload.test_fileemmiter_sorter.
+
 0.5.10 (2018-12-22)
 -------------------
 - fixed getting segment files from queue.
