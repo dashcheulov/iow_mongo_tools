@@ -91,7 +91,7 @@ def test_fileemmiter_sorter(tmpdir):
         sfiles[sfile] = str(sfiles[sfile].realpath())
     sort1 = upload.FileEmitter.Sorter(
         {'file_path_regexp': '^.*/([a-z])([0-9]+).*p([0-9])\..*$',
-         'order': ({'path.1': 'asc'}, {'path.2': 'asc'}, {'path.0': 'asc'}, {'stat.st_mtime': 'desc'})})
+         'order': ({'path.1': 'asc'}, {'path.2': 'asc'}, {'path.0': 'asc'}, {'stat.st_ctime': 'desc'})})
     assert list(map(os.path.basename, sort1.sort(sfiles.values()))) == ['s12083479file_p0.log.gz',
                                                                         's12083479file_p2.tgz',
                                                                         'a12083479file_p3.log.gz',
@@ -101,7 +101,7 @@ def test_fileemmiter_sorter(tmpdir):
                                                                         's12083480file_p1.tgz']
     sort2 = upload.FileEmitter.Sorter(
         {'file_path_regexp': '^.*/([a-z])([0-9]+).*p([0-9])\..*$',
-         'order': ({'path.2': 'desc'}, {'path.0': 'asc'}, {'stat.st_mtime': 'asc'})})
+         'order': ({'path.2': 'desc'}, {'path.0': 'asc'}, {'stat.st_ctime': 'asc'})})
     assert list(map(os.path.basename, sort2.sort(sfiles.values()))) == ['a12083479file_p3.log.gz',
                                                                         's12083479file_p2.tgz',
                                                                         'a12083480file_p1.log.gz',

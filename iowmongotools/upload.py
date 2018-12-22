@@ -421,7 +421,8 @@ class Uploader(app.App):
             logger.error('Please provide cluster_config.yaml. See --help.')
             return 1
         mimetypes.init()
-        mimetypes.types_map.update(self.config.mime_types_map)
+        if hasattr(self.config, 'mime_types_map'):
+            mimetypes.types_map.update(self.config.mime_types_map)
         if hasattr(self.config, 'module_templates'):
             logger.info('Loading external templates from %s', self.config.module_templates)
             templates.load_module(self.config.module_templates)
@@ -470,7 +471,7 @@ class Uploader(app.App):
                         counter.count_result(result.get())
                         self.results.remove(result)
                         result_ready = True
-                self.consume_queue(file_emitters)
+                        self.consume_queue(file_emitters)
             if not self.results:
                 self.wait_for_items(file_emitters)
             self.consume_queue(file_emitters)
@@ -494,7 +495,8 @@ class Uploader(app.App):
     def consume_queue(self, emitter_objects):
         for obj in emitter_objects:
             while not obj.queue.empty():
-                self.results += [self.pool.apply_async(self.process_file, (cl_name, obj.queue.get())) for cl_name, _ in
+                segment_file = obj.queue.get()
+                self.results += [self.pool.apply_async(self.process_file, (cl_name, segment_file)) for cl_name, _ in
                                  cluster.Cluster.objects.items()]
 
     @staticmethod

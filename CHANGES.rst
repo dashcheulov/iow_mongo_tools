@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.10 (2018-12-22)
+-------------------
+- fixed getting segment files from queue.
+- changed mtime to ctime in test_upload.test_fileemmiter_sorter
+
 0.5.9 (2018-12-21)
 ------------------
 - moved templates to separate module as classes.
