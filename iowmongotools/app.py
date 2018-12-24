@@ -236,10 +236,11 @@ class SettingCliUploader(SettingCliCluster):
     def extra_run(self, parser, argv):
         exclusions = self.add_clusters(parser, argv)
         parser.parse_known_args(args=[a for a in argv if a not in ['-h', '--help']], namespace=self)
-        parser.add_argument("--{}".format('workers'), default=len(self.clusters), help='Amount of workers', type=int)
+        parser.add_argument("--{}".format('workers'), default=len(self.clusters) if hasattr(self, 'clusters') else 1,
+                            help='Amount of workers', type=int)
         if getattr(self, 'upload'):
             parser.add_argument("--{}".format('providers'), default=[p for p in self.upload.keys()],
-                            help='List of providers of segments for processing', nargs='*')
+                                help='List of providers of segments for processing', nargs='*')
         return (*exclusions, 'workers', 'providers')
 
 

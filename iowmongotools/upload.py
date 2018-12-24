@@ -105,7 +105,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         self.provider = provider
         self.name = os.path.basename(self.path).split('.')[0]
         self.strategy = strategy
-        self.type = mimetypes.guess_type(path)
+        self.type = strategy.get_file_type(path)
         if self.type[0] not in strategy.allowed_types:
             raise WrongFileType(self.name, self.type[0], strategy.allowed_types)
         self.invalid = False
@@ -125,6 +125,12 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             self.log('debug', 'The file is type of {}. Opening.'.format(self.type))
         with open_func(self.path, 'rt') as f_in:
             line = f_in.readline()
+            if self.type[0] == 'text/csv':
+                try:
+                    self.get_setter(line)
+                except BadLine:
+                    self.log('debug', 'Seems the first line is header of csv. Skipping.')
+                    line = f_in.readline()
             while line:
                 yield line.strip()
                 line = f_in.readline()
@@ -253,6 +259,7 @@ class Strategy(object):
         self.force_reprocess = config.get('force_reprocess', False)
         self.process_invalid_file_to_end = config.get('process_invalid_file_to_end', True)
         self.upsert = config.get('upsert', False)
+        self.__file_type_override = config.get('file_type_override', None)
         self.log_invalid_lines = config.get('log_invalid_lines', True)
         self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
 
@@ -293,6 +300,10 @@ class Strategy(object):
             matched = templates.REGEXP.match(item)
             if matched:
                 return {matched.group(1)}
+
+    def get_file_type(self, path):
+        rtype = mimetypes.guess_type(path)
+        return (self.__file_type_override, rtype[1]) if self.__file_type_override else rtype
 
 
 class FileEmitter(fs.EventHandler):
@@ -439,7 +450,7 @@ class Uploader(app.App):
             'upload': (dict(),),
             'reprocess_invalid': (False, 'Whether reprocess files were not uploaded previously'),
             'reprocess_file': ([], 'Paths of files which will be reprocessed.'),
-            'force': (False, 'Process files even they have been processed successfully previously'),
+            'force': (False, 'Process files even if they have been processed successfully previously'),
             'segments_collection': ('', 'Full name of collection (\'database.collection\') for uploading segments')
         })
         config['logging'] = (app.deep_merge(config['logging'][0], {'formatters': {

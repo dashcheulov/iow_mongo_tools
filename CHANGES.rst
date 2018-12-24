@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.13 (2018-12-24)
+-------------------
+- fixed fall of mongo_upload in case of lack of clusters in config.
+- added possibility to override file type for provider.
+
 0.5.12 (2018-12-23)
 -------------------
 - configured logging on early stage from default_config.
