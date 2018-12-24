@@ -18,7 +18,8 @@ def test_strategy_timestamp():
 
 
 def test_strategy_parse_output():
-    sample_strategy = upload.Strategy({'input': {'text/csv': {}}, 'update': {'_id': ''}, 'collection': 'a.b'})
+    sample_strategy = upload.Strategy(
+        {'input': {'text/csv': {}}, 'update': {'_id': '{{uuid}}', 'dmp': '{{hash_of_segments}}'}, 'collection': 'a.b'})
     assert sample_strategy._parse_output(
         {'_id': "{{user_id}}", 'dmp': {'bk': '{hash_of_segments}', 'fra': 'rg', 'some_key': '{{some_key}}'}},
         {'user_id': 'wefv', 'some_key': 'some_val'}) == {'_id': 'wefv', 'dmp': {'bk': '{hash_of_segments}', 'fra': 'rg',
