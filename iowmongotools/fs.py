@@ -74,8 +74,10 @@ class LocalFilesObserver(Observer):
         self.path = config['path']
         if not os.path.exists(self.path):
             raise FileNotFoundError('%s doesn\'t exist.' % self.path)
-        self.filename = config.get('filename', '**')
+        self.filename = config.get('filename', '*')
         self.recursive = config.get('recursive', False)
+        if self.recursive:
+            self.path = os.path.join(self.path, '**')
         self.polling_interval = config.get('polling_interval', 5)
         super().__init__(handler)
 

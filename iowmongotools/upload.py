@@ -61,13 +61,13 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
     }
 
     class Counter(object):
-        def __init__(self):
+        def __init__(self, line_total=0):
             self.matched = 0
             self.modified = 0
             self.upserted = 0
             self.line_cur = 0
             self.line_invalid = 0
-            self.line_total = 0
+            self.line_total = line_total
 
         def __add__(self, other):
             obj = SegmentFile.Counter()
@@ -90,10 +90,11 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                                                                             ', '.join(docs))
 
         def count_bulk_write_result(self, result):
-            self.matched += result.matched_count
-            if result.modified_count is not None:
-                self.modified += result.modified_count
-            self.upserted += result.upserted_count
+            if result.acknowledged:
+                self.matched += result.matched_count
+                if result.modified_count is not None:
+                    self.modified += result.modified_count
+                self.upserted += result.upserted_count
 
     def __init__(self, path, provider, strategy):
         if not isinstance(strategy, Strategy):
@@ -152,7 +153,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         batch = list()
         self.populate_templates_with_filename()
         self.invalid = False  # give it one more chance
-        self.counter.__init__()
+        self.counter.__init__(self.counter.line_total)
         self.timer.__init__()
         self.timer.start()
         self.processed = False
@@ -209,7 +210,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                 self.counter.line_total = 0
             if self.provider != (data.get('provider') or self.provider):
                 raise InvalidSegmentFile(
-                    'File \'%s\' belonged to provider \'%s\'. Now you\'re trying to load it as \'%s\'' % (
+                    'File \'%s\' is belonged to provider \'%s\'. Now you\'re trying to load it as \'%s\'' % (
                         self.name, data.get('provider'), self.provider))
 
     def dump_metadata(self):

@@ -1,6 +1,12 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.15 (2018-12-26)
+-------------------
+- added section 'mongo_client_settings' to config of cluster. All options from the section are passed directly to MongoClient. #EMX-2800
+- adjusted 'recursive' in local delivery.
+- keeping 'lines_total' during initialisation Counter.
+
 0.5.14 (2018-12-25)
 -------------------
 - stripping spaces at every field of line.

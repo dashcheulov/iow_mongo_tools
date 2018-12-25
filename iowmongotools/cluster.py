@@ -13,7 +13,7 @@ def create_objects(clusters, cluster_config):
     :type clusters: iterable
     :param clusters: list of cluster's names to create
     :type cluster_config: dict
-    :type cluster_config: configuration of clusters. Keys are names, values are configs.
+    :param cluster_config: configuration of clusters. Keys are names, values are configs.
 
     :returns amount of created objects
     """
@@ -58,8 +58,10 @@ class Cluster(object):
           project:
             partitioned: true
         """
+        mongo_client_settings = cluster_config.pop('mongo_client_settings', dict())
         self._declared_config = cluster_config
-        self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False)
+        self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False,
+                                        **mongo_client_settings)
         self.name = name
 
     def generate_commands(self, pre_remove_dbs=(), force=False):

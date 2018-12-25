@@ -73,6 +73,7 @@ def test_strategy_list_of_used_templates():
 def test_segfile_counter():
     class MockResult(object):
         def __init__(self, matched_count, modified_count, upserted_count):
+            self.acknowledged = True
             self.matched_count = matched_count
             self.modified_count = modified_count
             self.upserted_count = upserted_count
