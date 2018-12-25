@@ -103,8 +103,12 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         self.logger = None
         self.path = path
         self.provider = provider
-        self.name = os.path.basename(self.path).split('.')[0]
         self.strategy = strategy
+        if self.strategy.override_filename_from_path:
+            regexp, replacement = self.strategy.override_filename_from_path
+            self.name = regexp.sub(replacement, self.path)
+        else:
+            self.name = os.path.basename(self.path).split('.')[0]
         self.type = strategy.get_file_type(path)
         if self.type[0] not in strategy.allowed_types:
             raise WrongFileType(self.name, self.type[0], strategy.allowed_types)
@@ -262,6 +266,10 @@ class Strategy(object):
         self.__file_type_override = config.get('file_type_override', None)
         self.log_invalid_lines = config.get('log_invalid_lines', True)
         self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
+        self.override_filename_from_path = config.get('override_filename_from_path')
+        if isinstance(self.override_filename_from_path, dict):
+            pattern, replacement = next(iter(self.override_filename_from_path.items()))
+            self.override_filename_from_path = re.compile(pattern), replacement
 
     def get_setter(self, line, config):
         if len(config['titles']) != len(line):
@@ -270,7 +278,7 @@ class Strategy(object):
         for index in range(len(config['titles'])):
             if not config['patterns'][index].match(line[index]):  # validation
                 raise BadLine
-            dict_line[config['titles'][index]] = line[index]
+            dict_line[config['titles'][index]] = line[index].strip()
         return self._parse_output(self.output, dict_line)
 
     def _parse_output(self, item, dict_line):

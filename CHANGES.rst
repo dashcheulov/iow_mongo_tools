@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.14 (2018-12-25)
+-------------------
+- stripping spaces at every field of line.
+- added possibility to override name of file with parts of abs path.
+
 0.5.13 (2018-12-24)
 -------------------
 - fixed fall of mongo_upload in case of lack of clusters in config.
