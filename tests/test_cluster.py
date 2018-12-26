@@ -79,8 +79,6 @@ def test_generate_commands():
         {'name': 'mongo-gce-or-3'},
         {'key': {'_id': 'hashed'}, 'unique': False},
         {'key': {'_id': 'hashed'}, 'unique': False}]
-    print(actual_args)
-    print(actual_kwargs)
     assert actual_description == description_of_all_commands
     assert actual_args == args_of_all_commands
     assert actual_kwargs == kwargs_of_all_commands

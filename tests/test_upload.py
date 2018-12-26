@@ -181,3 +181,74 @@ def test_counter():
         sample_counter.count_result(('file10', 0, copy(segfilecnt)))
     assert str(
         sample_counter) == 'Total files: processed - 2, skipped - 4. Lines: total - 10, invalid - 0. Documents: matched - 20, modified - 20, upserted - 4.'
+
+
+def test_segment_file_tsv(tmpdir):
+    with pytest.raises(TypeError):
+        upload.SegmentFile('liveramp', 'unexistent_file', 'not_strategy')
+    tsv_file = tmpdir.join('tsv_file.tsv')
+    tsv_file.write('''f35ac18d-de62-42d1-97b5-ac6136187451\t1995228346
+    0100e0ba-5c29-4d2c-8a23-0c2e76bc38df\t1000812376''')
+    sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': {
+        'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$',
+        'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}},
+        'update': {'_id': "{{user_id}}", 'lvmp': '{{segments}}'}, 'collection': 'a.b'})
+    with pytest.raises(FileNotFoundError):
+        upload.SegmentFile('liveramp', 'unexistent_file', sample_strategy)
+    segfile = upload.SegmentFile(str(tsv_file.realpath()), 'liveramp', sample_strategy)
+    assert list(segfile.get_line()) == ['f35ac18d-de62-42d1-97b5-ac6136187451\t1995228346',
+                                        '0100e0ba-5c29-4d2c-8a23-0c2e76bc38df\t1000812376']
+    assert segfile.get_setter(next(segfile.get_line())) == {'_id': 'f35ac18d-de62-42d1-97b5-ac6136187451',
+                                                            'lvmp': '1995228346'}
+    assert next(segfile.get_batch()) == [
+        upload.UpdateOne({'_id': 'f35ac18d-de62-42d1-97b5-ac6136187451'}, {'lvmp': '1995228346'}, False, None, None),
+        upload.UpdateOne({'_id': '0100e0ba-5c29-4d2c-8a23-0c2e76bc38df'}, {'lvmp': '1000812376'}, False, None, None)]
+    with pytest.raises(upload.InvalidSegmentFile):
+        segfile.load_metadata({'provider': 'lotame', 'invalid': True,
+                               'processed': True,
+                               'timer': {'started_ts': 1545820888.727645, 'finished_ts': 1545821147.86029},
+                               'counter': {'matched': 0, 'modified': 0, 'upserted': 0, 'line_cur': 3455803,
+                                           'line_invalid': 1267, 'line_total': 3455803}})
+    segfile.load_metadata({'_id': 'audiencemembership_2018122500',
+                           'path': '/Users/denis/iponweb/clearstream/lotame/2018122500/4827/audiencemembership.tsv.gz',
+                           'provider': 'liveramp', 'type': ['text/tab-separated-values', 'gzip'], 'invalid': True,
+                           'processed': True,
+                           'timer': {'started_ts': 1545820888.727645, 'finished_ts': 1545821147.86029},
+                           'counter': {'matched': 0, 'modified': 0, 'upserted': 0, 'line_cur': 3455803,
+                                       'line_invalid': 1267, 'line_total': 3455803}})
+    assert segfile.dump_metadata() == {'_id': 'tsv_file',
+                                       'counter': {'line_cur': 3455803, 'line_invalid': 1267, 'line_total': 0,
+                                                   'matched': 0, 'modified': 0, 'upserted': 0}, 'invalid': True,
+                                       'path': tsv_file.realpath(),
+                                       'processed': True, 'provider': 'liveramp',
+                                       'timer': {'finished_ts': 1545821147.86029, 'started_ts': 1545820888.727645},
+                                       'type': ('text/tab-separated-values', None)}
+
+
+def test_timer():
+    timer = upload.Timer()
+    start_ts = time.time()
+    timer.start()
+    time.sleep(0.0000001)
+    finish_ts = time.time()
+    timer.stop()
+    assert int(timer.started_ts) == int(start_ts)
+    assert int(timer.finished_ts) == int(finish_ts)
+    assert str(timer) == 'Processing time - 0 hours 0 minutes 0 seconds.'
+
+
+def test_file_emitter(tmpdir):
+    tsv_file = tmpdir.join('tsv_file.tsv')
+    tsv_file.write('s')
+    csv_file = tmpdir.join('csv_file.csv')
+    csv_file.write('s')
+    file_emitter = upload.FileEmitter('liveramp', {'delivery': {'local': {'path': '/tmp'}}, 'input': {'text/csv': {}},
+                                                   'update': {'_id': '{{uuid}}', 'dmp': '{{hash_of_segments}}'},
+                                                   'collection': 'a.b'})
+    file_emitter.on_file_discovered(str(tsv_file.realpath()))
+    assert file_emitter.errors.is_set()
+    file_emitter.errors.clear()
+    file_emitter.on_file_discovered(str(csv_file.realpath()))
+    assert not file_emitter.errors.is_set()
+    assert file_emitter.items_ready.is_set()
+    assert isinstance(file_emitter.queue.get(), upload.SegmentFile)

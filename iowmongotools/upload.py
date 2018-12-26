@@ -5,29 +5,13 @@ import os
 import logging
 import re
 import gzip
-import shutil
 import time
 import mimetypes
-from multiprocessing import Pool, Event
+from multiprocessing import Pool, Event, Array
 from pymongo.operations import UpdateOne
 from iowmongotools import app, cluster, fs, templates
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-def decompress_file(src, dst_dir):
-    """ Decompresses file with gzip
-    :returns abs path of decompressed file
-    """
-    if not src.endswith('.gz'):
-        raise ValueError("%s unknown suffix -- ignored" % src)
-    dst = os.path.join(dst_dir, os.path.basename(src.rsplit('.gz', 1)[0]))
-    logger.info("Decompressing %s to %s", src, dst)
-    with gzip.open(src, 'rb') as f_in:
-        with open(dst, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-    logger.debug("%s decompressed", src)
-    return dst
 
 
 class BadLine(ValueError):
@@ -102,6 +86,7 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
         if not os.path.isfile(path):
             raise FileNotFoundError('File {} doesn\'t exist.'.format(path))
         self.logger = None
+        self.shared_index = None
         self.path = path
         self.provider = provider
         self.strategy = strategy
@@ -184,6 +169,9 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                     speed = int((self.counter.line_cur - last_line_cnt) / (time.time() - last_log_ts))
                     last_line_cnt = self.counter.line_cur
                     last_log_ts = time.time()
+                    if self.shared_index and not self.counter.line_total:
+                        if Uploader.shared_array[self.shared_index]:
+                            self.counter.line_total = Uploader.shared_array[self.shared_index]
                     percent = '{:.0f}%'.format(
                         self.counter.line_cur * 100 / self.counter.line_total) if self.counter.line_total else ''
                     self.log('info',
@@ -198,6 +186,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
             yield batch
         if self.strategy.process_invalid_file_to_end or not self.invalid:
             self.counter.line_total = self.counter.line_cur
+            if self.shared_index:
+                Uploader.shared_array[self.shared_index] = self.counter.line_total
         self.timer.stop()
 
     def load_metadata(self, data):
@@ -212,6 +202,8 @@ class SegmentFile(object):  # pylint: disable=too-few-public-methods
                 raise InvalidSegmentFile(
                     'File \'%s\' is belonged to provider \'%s\'. Now you\'re trying to load it as \'%s\'' % (
                         self.name, data.get('provider'), self.provider))
+            if self.shared_index and self.counter.line_total:
+                Uploader.shared_array[self.shared_index] = self.counter.line_total
 
     def dump_metadata(self):
         return {
@@ -447,6 +439,8 @@ class Counter(object):
 
 
 class Uploader(app.App):
+    shared_array = Array('i', 1000)
+
     def __init__(self):
         super().__init__()
         self.pool = None
@@ -497,8 +491,16 @@ class Uploader(app.App):
                 self.config.upload[key]['force_reprocess'] = self.config.force
             self.config.upload[key]['collection'] = self.config.upload[key].get(
                 'collection') or self.config.segments_collection
+        for key in self.config.cluster_config.keys():
+            if 'mongo_client_settings' not in self.config.cluster_config[key] and hasattr(self.config,
+                                                                                          'mongo_client_settings'):
+                self.config.cluster_config[key]['mongo_client_settings'] = self.config.mongo_client_settings
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
-        self.pool = Pool(processes=self.config.workers)  # forking
+
+        def init(shared):
+            Uploader.shared_array = shared
+
+        self.pool = Pool(processes=self.config.workers, initializer=init, initargs=(self.shared_array,))  # forking
         counter = Counter()
         if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
             if len(self.config.providers) != 1:
@@ -561,6 +563,11 @@ class Uploader(app.App):
         for obj in emitter_objects:
             while not obj.queue.empty():
                 segment_file = obj.queue.get()
+                Uploader.shared_array[0] = (Uploader.shared_array[0] + 1) % 1000  # increase index pointer within 1000
+                if not Uploader.shared_array[0]:  # index pointer mustn't point to itself
+                    Uploader.shared_array[0] += 1
+                Uploader.shared_array[Uploader.shared_array[0]] = 0  # init element
+                segment_file.shared_index = Uploader.shared_array[0]  # pass index to segment_file
                 self.results += [self.pool.apply_async(self.process_file, (cl_name, segment_file)) for cl_name, _ in
                                  cluster.Cluster.objects.items()]
 

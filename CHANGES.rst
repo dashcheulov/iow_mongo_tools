@@ -1,6 +1,14 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.16 (2018-12-27)
+-------------------
+- set 'ordered=False' in bulk_write.
+- added shared array to share amount of total lines between processes.
+- merging 'mongo_client_settings' from global config to cluster's.
+- rose test coverage to 63%.
+- removed unused function upload.decompress_file.
+
 0.5.15 (2018-12-26)
 -------------------
 - added section 'mongo_client_settings' to config of cluster. All options from the section are passed directly to MongoClient. #EMX-2800
