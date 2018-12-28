@@ -161,6 +161,8 @@ class Cluster(object):
         collection.replace_one({'_id': obj.name}, obj.dump_metadata(), upsert=True)
 
     def upload_segfile(self, obj):
+        wc = obj.strategy.write_concern or dict()
+        collection = self._api[obj.strategy.database].get_collection(obj.strategy.collection,
+                                                                     write_concern=pymongo.WriteConcern(**wc))
         for batch in obj.get_batch():
-            obj.counter.count_bulk_write_result(
-                self._api[obj.strategy.database][obj.strategy.collection].bulk_write(batch, ordered=False))
+            obj.counter.count_bulk_write_result(collection.bulk_write(batch, ordered=False))

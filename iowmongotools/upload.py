@@ -6,6 +6,7 @@ import logging
 import re
 import gzip
 import time
+from collections import deque
 import mimetypes
 from multiprocessing import Pool, Event, Array
 from pymongo.operations import UpdateOne
@@ -37,7 +38,7 @@ class WrongFileType(ValueError):
         super().__init__('Type of file \'%s\' is \'%s\', expected %s' % (name, type, ' or '.join(allowed_types)))
 
 
-class SegmentFile(object):  # pylint: disable=too-few-public-methods
+class SegmentFile(object):
     """ Represents file containing segments """
     SEPARATORS_MAP = {
         'text/tab-separated-values': '\t',
@@ -263,6 +264,7 @@ class Strategy(object):
         if isinstance(self.override_filename_from_path, dict):
             pattern, replacement = next(iter(self.override_filename_from_path.items()))
             self.override_filename_from_path = re.compile(pattern), replacement
+        self.write_concern = config.get('write_concern')
 
     def get_setter(self, line, config):
         if len(config['titles']) != len(line):
@@ -349,7 +351,6 @@ class FileEmitter(fs.EventHandler):
         self.sort = self.sorting.sort if self.sorting else lambda x: x
         self.strategy = Strategy(upload_config)
         logger.debug('Loaded strategy for %s', provider)
-        self.start_observers()
 
     def on_file_discovered(self, path):
         logger.debug('%s is discovered. Put in queue', path)
@@ -412,6 +413,10 @@ class Counter(object):
 
     @property
     def segfile_counters(self):
+        """
+        Sum all _segfile_counters. To make this method idempotent, use copy() on self._segfile_counters.
+        :return: united object of SegmentFile.Counter or empty str
+        """
         if not self._segfile_counters:
             return ''
         first = self._segfile_counters.pop(next(iter(self._segfile_counters)))
@@ -445,6 +450,8 @@ class Uploader(app.App):
         super().__init__()
         self.pool = None
         self.results = []
+        self.buffer = dict()
+        self.counter = Counter()
 
     @property
     def default_config(self):
@@ -484,6 +491,16 @@ class Uploader(app.App):
         if hasattr(self.config, 'module_templates'):
             logger.info('Loading external templates from %s', self.config.module_templates)
             templates.load_module(self.config.module_templates)
+        if not self.config.upload:
+            logger.error('Uploading isn\'t configured. Fill in section \'upload\' in config. Set \'--providers\'.')
+            return 1
+        for provider in self.config.upload.copy().keys():
+            if provider not in self.config.providers:
+                self.config.upload.pop(provider)
+        for provider in self.config.providers:
+            if provider not in self.config.upload.copy().keys():
+                logger.error('Unknown provider %s. Fill in section \'upload\' in config.', provider)
+                return 1
         for key in self.config.upload.keys():  # merge providers' settings with global ones
             if 'reprocess_invalid' not in self.config.upload[key]:
                 self.config.upload[key]['reprocess_invalid'] = self.config.reprocess_invalid
@@ -496,46 +513,40 @@ class Uploader(app.App):
                                                                                           'mongo_client_settings'):
                 self.config.cluster_config[key]['mongo_client_settings'] = self.config.mongo_client_settings
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
+        for provider in self.config.providers: # init buffer
+            self.buffer[provider] = dict()
+        for provider in self.config.providers:  # files of only one provider can't be uploaded
+            for cl in self.config.clusters:  # to a cluster simultaneously
+                self.buffer[provider][cl] = [True, deque()]
 
-        def init(shared):
-            Uploader.shared_array = shared
+        def init(shared_array):
+            Uploader.shared_array = shared_array
 
         self.pool = Pool(processes=self.config.workers, initializer=init, initargs=(self.shared_array,))  # forking
-        counter = Counter()
         if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
             if len(self.config.providers) != 1:
                 logger.error('You\'re using --reprocess_file, please set only one of \'%s\' provider with --providers',
                              ', '.join(self.config.upload.keys()))
                 return 1
+            file_emitter = FileEmitter(self.config.providers[0], self.config.upload[self.config.providers[0]])
             for path in self.config.reprocess_file:
-                try:
-                    segfile = SegmentFile(path, self.config.providers[0],
-                                          Strategy(self.config.upload[self.config.providers[0]]))
-                    self.results += [self.pool.apply_async(self.process_file, (cl_name, segfile))
-                                     for cl_name, _ in cluster.Cluster.objects.items()]
-                except FileNotFoundError as err:
-                    logger.error(err)
-                    errors += 1
-            for result in self.results:
-                counter.count_result(result.get())
-            logger.info('%s %s', counter, timer)
-            return errors + counter.invalid  # end of reprocessing paths.
-        for provider in self.config.upload.copy().keys():
-            if provider not in self.config.providers:
-                self.config.upload.pop(provider)
-        if not self.config.upload:
-            logger.error('Uploading isn\'t configured. Fill in section \'upload\' in config. Set \'--providers\'.')
-            return 1
+                file_emitter.on_file_discovered(path)
+            return self.main(errors, (file_emitter,), timer)  # end of reprocessing paths.
         file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
+        for file_emitter in file_emitters:
+            file_emitter.start_observers()
+        return self.main(errors, file_emitters, timer)
+
+    def main(self, errors, file_emitters, timer):
         self.wait_for_items(file_emitters)
         self.consume_queue(file_emitters)
         while self.results:
             result_ready = False
             while not result_ready:  # polling of results
-                time.sleep(0.5)
+                time.sleep(0.01)
                 for result in self.results:
                     if result.ready():
-                        counter.count_result(result.get())
+                        self.handle_result(result.get())
                         self.results.remove(result)
                         result_ready = True
                         self.consume_queue(file_emitters)
@@ -546,8 +557,8 @@ class Uploader(app.App):
             if file_emitter.errors.is_set():
                 errors += 1
         timer.stop()
-        logger.info('%s %s', counter, timer)
-        return errors + counter.invalid
+        logger.info('%s %s', self.counter, timer)
+        return errors + self.counter.invalid
 
     @staticmethod
     def wait_for_items(emitter_objects, timeout=10800, atleast_one=False):
@@ -560,7 +571,7 @@ class Uploader(app.App):
         raise TimeoutError('Reached timeout while waiting for files.')
 
     def consume_queue(self, emitter_objects):
-        for obj in emitter_objects:
+        for obj in emitter_objects:  # check emitter queues and put objects to buffer
             while not obj.queue.empty():
                 segment_file = obj.queue.get()
                 Uploader.shared_array[0] = (Uploader.shared_array[0] + 1) % 1000  # increase index pointer within 1000
@@ -568,8 +579,21 @@ class Uploader(app.App):
                     Uploader.shared_array[0] += 1
                 Uploader.shared_array[Uploader.shared_array[0]] = 0  # init element
                 segment_file.shared_index = Uploader.shared_array[0]  # pass index to segment_file
-                self.results += [self.pool.apply_async(self.process_file, (cl_name, segment_file)) for cl_name, _ in
-                                 cluster.Cluster.objects.items()]
+                for cl_name in cluster.Cluster.objects.keys():
+                    self.buffer[segment_file.provider][cl_name][1].append(segment_file)
+        for provider in self.config.providers:  # check buffer
+            for cl in cluster.Cluster.objects.keys():
+                if self.buffer[provider][cl][0] and self.buffer[provider][cl][1]:
+                    self.results.append(
+                        self.pool.apply_async(self.process_file, (cl, self.buffer[provider][cl][1].popleft())))
+                    self.buffer[provider][cl][0] = False
+
+    def handle_result(self, result):
+        """
+        :param result: tuple of segfile.name, err_code, segfile.counter, segfile.provider, cluster.name
+        """
+        self.counter.count_result(result)
+        self.buffer[result[3]][result[4]][0] = True
 
     @staticmethod
     def process_file(cluster_name, segfile):
@@ -584,13 +608,13 @@ class Uploader(app.App):
             cl.read_segfile_info(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
-            return segfile.name, 1, None
+            return segfile.name, 1, None, segfile.provider, cl.name
         if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
             logger.debug('The file has already been uploaded. Skipping.')
-            return segfile.name, 0, None
+            return segfile.name, 0, None, segfile.provider, cl.name
         if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
             logger.debug('The file is invalid. Skipping.')
-            return segfile.name, 0, None
+            return segfile.name, 0, None, segfile.provider, cl.name
         if segfile.invalid:
             logger.info('The file was invalid. Reprocessing.')
         elif segfile.processed:
@@ -602,10 +626,10 @@ class Uploader(app.App):
             cl.upload_segfile(segfile)
         except InvalidSegmentFile as err:
             logger.error(err)
-            return segfile.name, 1, segfile.counter
+            return segfile.name, 1, segfile.counter, segfile.provider, cl.name
         else:
             segfile.processed = True
         finally:
             cl.save_segfile_info(segfile)
             logger.info('Finished %s. %s %s', segfile.path, segfile.counter, segfile.timer)
-        return segfile.name, 1 if segfile.invalid else 0, segfile.counter
+        return segfile.name, 1 if segfile.invalid else 0, segfile.counter, segfile.provider, cl.name

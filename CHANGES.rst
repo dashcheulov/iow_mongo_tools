@@ -1,6 +1,13 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.17 (2018-12-28)
+-------------------
+- added buffer to Uploader in order to not process two sequential files from same provider at one cluster simultaneously. #USA_DEMANDBASE-2598
+- added parameter 'write_concern' to config of provider.
+- added checks of config parameters.
+- took off main cycle fromm Uploader.run to Uploader.main
+
 0.5.16 (2018-12-27)
 -------------------
 - set 'ordered=False' in bulk_write.
