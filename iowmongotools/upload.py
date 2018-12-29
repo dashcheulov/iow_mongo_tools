@@ -7,6 +7,7 @@ import re
 import gzip
 import time
 from collections import deque
+from copy import copy
 import mimetypes
 from multiprocessing import Pool, Event, Array
 from pymongo.operations import UpdateOne
@@ -409,29 +410,59 @@ class Counter(object):
 
     @property
     def processed(self):
-        return len(self._segfile_counters)
+        processed = set()
+        for item in self._segfile_counters.keys():
+            processed.add(item[0])
+        return len(processed)
 
     @property
-    def segfile_counters(self):
+    def known_providers(self):
+        known_providers = set()
+        for item in self._segfile_counters.keys():
+            known_providers.add(item[1])
+        return known_providers
+
+    @property
+    def known_clusters(self):
+        known_clusters = set()
+        for item in self._segfile_counters.keys():
+            known_clusters.add(item[2])
+        return known_clusters
+
+    def _aggregate_counters(self, providers=None, clusters=None):
         """
-        Sum all _segfile_counters. To make this method idempotent, use copy() on self._segfile_counters.
+        Sum all _segfile_counters by providers or/and clusters
         :return: united object of SegmentFile.Counter or empty str
         """
         if not self._segfile_counters:
             return ''
-        first = self._segfile_counters.pop(next(iter(self._segfile_counters)))
-        return sum(self._segfile_counters.values(), first)
+        if not providers:
+            providers = self.known_providers
+        if not clusters:
+            clusters = self.known_clusters
+        filtered_keys = set()
+        known_files = set()
+        out = list()
+        for key in self._segfile_counters.keys():
+            if key[1] in providers and key[2] in clusters:
+                filtered_keys.add(key)
+        for key in filtered_keys:
+            if key[0] in known_files:
+                out[-1] &= self._segfile_counters[key]
+                continue
+            out.append(copy(self._segfile_counters[key]))
+            known_files.add(key[0])
+        return sum(out[:-1], out[-1])
 
     def count_result(self, item):
+        signature = item[0], item[3], item[4]  # slice of filename, provider, cluster_name
         if item[1] == 1:
             self._invalid_files.add(item[0])
-        if item[1:] == (0, None) and item[0] not in self._segfile_counters:
+        if item[1:3] == (0, None) and signature not in self._segfile_counters:
             self._skipped_files.add(item[0])
         if isinstance(item[2], SegmentFile.Counter):
-            if item[0] not in self._segfile_counters:
-                self._segfile_counters[item[0]] = item[2]
-            else:
-                self._segfile_counters[item[0]] &= item[2]
+            if signature not in self._segfile_counters:
+                self._segfile_counters[signature] = item[2]
             self._skipped_files.discard(item[0])
 
     def __str__(self):
@@ -440,7 +471,7 @@ class Counter(object):
             if not getattr(self, name) and name != 'processed':
                 continue
             out.append('{} - {}'.format(name, getattr(self, name)))
-        return 'Total files: {}. {}'.format(', '.join(out), self.segfile_counters)
+        return 'Total files: {}. {}'.format(', '.join(out), self._aggregate_counters())
 
 
 class Uploader(app.App):
@@ -535,10 +566,10 @@ class Uploader(app.App):
         file_emitters = [FileEmitter(provider, config) for provider, config in self.config.upload.items()]
         for file_emitter in file_emitters:
             file_emitter.start_observers()
+        self.wait_for_items(file_emitters)
         return self.main(errors, file_emitters, timer)
 
     def main(self, errors, file_emitters, timer):
-        self.wait_for_items(file_emitters)
         self.consume_queue(file_emitters)
         while self.results:
             result_ready = False

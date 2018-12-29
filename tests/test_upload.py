@@ -147,9 +147,11 @@ def test_counter():
             segfilecnt.upserted = 1
             segfilecnt.line_total = 10
             segfilecnt.line_invalid = 5
-            sample_counter.count_result((filename, 1, segfilecnt))
+            sample_counter.count_result((filename, 1, segfilecnt, 'liveramp', str(cluster)))
     assert str(
         sample_counter) == 'Total files: processed - 10, invalid - 10. Lines: total - 100, invalid - 50. Documents: matched - 40, upserted - 40.'
+    assert str(sample_counter._aggregate_counters(
+        clusters=('2', '0'))) == 'Lines: total - 100, invalid - 50. Documents: matched - 20, upserted - 20.'
     sample_counter.__init__()
     sample_counter = upload.Counter()
     for filename in ['file{}'.format(i) for i in range(5)]:
@@ -159,17 +161,21 @@ def test_counter():
             segfilecnt.modified = 2
             segfilecnt.line_total = 4
             segfilecnt.line_invalid = 1
-            sample_counter.count_result((filename, 0, segfilecnt))
+            sample_counter.count_result((filename, 0, segfilecnt, filename, str(cluster)))
     assert str(
         sample_counter) == 'Total files: processed - 5. Lines: total - 20, invalid - 5. Documents: matched - 0, modified - 30.'
+    assert str(sample_counter._aggregate_counters(
+        providers=('file0', 'file4'))) == 'Lines: total - 8, invalid - 2. Documents: matched - 0, modified - 12.'
+    assert str(sample_counter._aggregate_counters(
+        ('file2', 'file1'), ('1', '2'))) == 'Lines: total - 8, invalid - 2. Documents: matched - 0, modified - 8.'
     sample_counter.__init__()
     for filename in ['file{}'.format(i) for i in range(5)]:
         for cluster in range(5):
-            sample_counter.count_result((filename, 0, None))
+            sample_counter.count_result((filename, 0, None, 'provider', str(cluster)))
     assert str(sample_counter) == 'Total files: processed - 0, skipped - 5. '
     sample_counter.__init__()
     for filename in ['file{}'.format(i) for i in range(5)]:
-        sample_counter.count_result((filename, 0, None))
+        sample_counter.count_result((filename, 0, None, 'provider', 's'))
     for cluster in range(2):
         segfilecnt = upload.SegmentFile.Counter()
         segfilecnt.matched = 5
@@ -177,8 +183,8 @@ def test_counter():
         segfilecnt.upserted = 1
         segfilecnt.line_total = 5
         segfilecnt.line_invalid = 0
-        sample_counter.count_result(('file1', 0, segfilecnt))
-        sample_counter.count_result(('file10', 0, copy(segfilecnt)))
+        sample_counter.count_result(('file1', 0, segfilecnt, 'liveramp', str(cluster)))
+        sample_counter.count_result(('file10', 0, copy(segfilecnt), 'liveramp', str(cluster)))
     assert str(
         sample_counter) == 'Total files: processed - 2, skipped - 4. Lines: total - 10, invalid - 0. Documents: matched - 20, modified - 20, upserted - 4.'
 
