@@ -208,6 +208,8 @@ class SegmentFile(object):
                 Uploader.shared_array[self.shared_index] = self.counter.line_total
 
     def dump_metadata(self):
+        timer = self.timer.__dict__.copy()
+        timer.pop('_Timer__scheduler_ts')
         return {
             '_id': self.name,
             'path': self.path,
@@ -215,7 +217,7 @@ class SegmentFile(object):
             'type': self.type,
             'invalid': self.invalid,
             'processed': self.processed,
-            'timer': self.timer.__dict__,
+            'timer': timer,
             'counter': self.counter.__dict__
         }
 
@@ -379,12 +381,20 @@ class Timer(object):
     def __init__(self):
         self.started_ts = 0
         self.finished_ts = 0
+        self.__scheduler_ts = dict()
 
     def start(self):
         self.started_ts = time.time()
 
     def stop(self):
         self.finished_ts = time.time()
+
+    def execute(self, func, args, interval):
+        signature = func.__name__, args
+        ts = time.time()
+        if ts >= self.__scheduler_ts.get(signature, 0) + interval:
+            self.__scheduler_ts[signature] = ts
+            return func(*args)
 
     def __str__(self):
         if self.finished_ts > self.started_ts:
@@ -429,6 +439,21 @@ class Counter(object):
             known_clusters.add(item[2])
         return known_clusters
 
+    def flush_metrics(self, prefix, path):
+        out = []
+        ts = int(time.time())
+        for provider in self.known_providers:
+            for cl in self.known_clusters:
+                counter = self._aggregate_counters((provider,), (cl,))
+                if not counter:
+                    return None
+                mp = (('lines_processed', counter.line_total), ('uploaded', counter.line_total - counter.line_invalid))
+                for metric in mp:
+                    out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
+        logger.debug('Flushing %s metrics to %s', len(out), path)
+        with open(path, 'a+') as metrics_file:
+            metrics_file.write(''.join(out))
+
     def _aggregate_counters(self, providers=None, clusters=None):
         """
         Sum all _segfile_counters by providers or/and clusters
@@ -452,7 +477,11 @@ class Counter(object):
                 continue
             out.append(copy(self._segfile_counters[key]))
             known_files.add(key[0])
-        return sum(out[:-1], out[-1])
+        if len(out) >= 2:
+            return sum(out[:-1], out[-1])
+        if not out:
+            return None
+        return out[0]
 
     def count_result(self, item):
         signature = item[0], item[3], item[4]  # slice of filename, provider, cluster_name
@@ -483,6 +512,7 @@ class Uploader(app.App):
         self.results = []
         self.buffer = dict()
         self.counter = Counter()
+        mimetypes.init()
 
     @property
     def default_config(self):
@@ -516,7 +546,6 @@ class Uploader(app.App):
         if not hasattr(self.config, 'clusters'):
             logger.error('Please provide cluster_config.yaml. See --help.')
             return 1
-        mimetypes.init()
         if hasattr(self.config, 'mime_types_map'):
             mimetypes.types_map.update(self.config.mime_types_map)
         if hasattr(self.config, 'module_templates'):
@@ -525,6 +554,11 @@ class Uploader(app.App):
         if not self.config.upload:
             logger.error('Uploading isn\'t configured. Fill in section \'upload\' in config. Set \'--providers\'.')
             return 1
+        if hasattr(self.config, 'metrics'):
+            if 'prefix' not in self.config.metrics or 'path' not in self.config.metrics:
+                raise AttributeError('Config of \'metrics\' must contain \'prefix\' and \'path\'')
+            if 'flush_interval' not in self.config.metrics:
+                self.config.metrics['flush_interval'] = 60
         for provider in self.config.upload.copy().keys():
             if provider not in self.config.providers:
                 self.config.upload.pop(provider)
@@ -544,7 +578,7 @@ class Uploader(app.App):
                                                                                           'mongo_client_settings'):
                 self.config.cluster_config[key]['mongo_client_settings'] = self.config.mongo_client_settings
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
-        for provider in self.config.providers: # init buffer
+        for provider in self.config.providers:  # init buffer
             self.buffer[provider] = dict()
         for provider in self.config.providers:  # files of only one provider can't be uploaded
             for cl in self.config.clusters:  # to a cluster simultaneously
@@ -581,6 +615,8 @@ class Uploader(app.App):
                         self.results.remove(result)
                         result_ready = True
                         self.consume_queue(file_emitters)
+                timer.execute(self.counter.flush_metrics, (self.config.metrics['prefix'], self.config.metrics['path']),
+                              self.config.metrics['flush_interval'])
             if not self.results:
                 self.wait_for_items(file_emitters)
             self.consume_queue(file_emitters)
@@ -588,6 +624,7 @@ class Uploader(app.App):
             if file_emitter.errors.is_set():
                 errors += 1
         timer.stop()
+        self.counter.flush_metrics(self.config.metrics['prefix'], self.config.metrics['path'])
         logger.info('%s %s', self.counter, timer)
         return errors + self.counter.invalid
 
