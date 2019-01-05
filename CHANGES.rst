@@ -1,6 +1,14 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.18 (2019-01-05)
+-------------------
+- hardened Counter with _aggregate_counters() for easy exporting metrics further.
+- remove wait_for_items() in mode 'reprocess_file'.
+- added method Timer.execute.
+- added 'metrics' to config and method Counter.flush_metrics which is executed in main loop.
+- implemented counting metrics using shared memory. #USA_DEMANDBASE-2598
+
 0.5.17 (2018-12-28)
 -------------------
 - added buffer to Uploader in order to not process two sequential files from same provider at one cluster simultaneously. #USA_DEMANDBASE-2598

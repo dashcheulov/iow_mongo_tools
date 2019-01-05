@@ -89,6 +89,7 @@ class SegmentFile(object):
             raise FileNotFoundError('File {} doesn\'t exist.'.format(path))
         self.logger = None
         self.shared_index = None
+        self.shared_metrics = [0, 0]
         self.path = path
         self.provider = provider
         self.strategy = strategy
@@ -157,6 +158,8 @@ class SegmentFile(object):
                 ilc += 1
             if self.counter.line_cur % self.strategy.batch_size == 0:
                 self.counter.line_invalid += ilc
+                self.shared_metrics[1] += ilc
+                self.shared_metrics[0] += self.strategy.batch_size
                 if not self.invalid and ilc / self.strategy.batch_size >= self.strategy.threshold_percent_invalid_lines_in_batch / 100:
                     self.invalid = True
                     self.log('error', '{} of {} lines in a batch are invalid. Marking the file as invalid'.format(ilc,
@@ -183,6 +186,8 @@ class SegmentFile(object):
                 ilc = 0
                 batch = list()
         self.counter.line_invalid += ilc
+        self.shared_metrics[1] += ilc
+        self.shared_metrics[0] += self.counter.line_cur % self.strategy.batch_size
         if batch:
             self.log('debug', 'Line {}: {}'.format(self.counter.line_cur, batch[-1]))
             yield batch
@@ -439,17 +444,29 @@ class Counter(object):
             known_clusters.add(item[2])
         return known_clusters
 
-    def flush_metrics(self, prefix, path):
+    def flush_metrics(self, prefix, path, from_shared_memory=True):
         out = []
         ts = int(time.time())
-        for provider in self.known_providers:
-            for cl in self.known_clusters:
-                counter = self._aggregate_counters((provider,), (cl,))
-                if not counter:
-                    return None
-                mp = (('lines_processed', counter.line_total), ('uploaded', counter.line_total - counter.line_invalid))
-                for metric in mp:
-                    out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
+        if from_shared_memory:
+            for provider in Uploader.shared_metrics.keys():
+                for cl in Uploader.shared_metrics[provider].keys():
+                    mp = (('lines_processed', Uploader.shared_metrics[provider][cl][0]), ('uploaded',
+                                                                                          Uploader.shared_metrics[
+                                                                                              provider][cl][0] -
+                                                                                          Uploader.shared_metrics[
+                                                                                              provider][cl][1]))
+                    for metric in mp:
+                        out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
+        else:
+            for provider in self.known_providers:
+                for cl in self.known_clusters:
+                    counter = self._aggregate_counters((provider,), (cl,))
+                    if not counter:
+                        return None
+                    mp = (('lines_processed', counter.line_total),
+                          ('uploaded', counter.line_total - counter.line_invalid))
+                    for metric in mp:
+                        out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
         logger.debug('Flushing %s metrics to %s', len(out), path)
         with open(path, 'a+') as metrics_file:
             metrics_file.write(''.join(out))
@@ -505,6 +522,7 @@ class Counter(object):
 
 class Uploader(app.App):
     shared_array = Array('i', 1000)
+    shared_metrics = dict()
 
     def __init__(self):
         super().__init__()
@@ -580,14 +598,18 @@ class Uploader(app.App):
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
         for provider in self.config.providers:  # init buffer
             self.buffer[provider] = dict()
-        for provider in self.config.providers:  # files of only one provider can't be uploaded
-            for cl in self.config.clusters:  # to a cluster simultaneously
+        for provider in self.config.providers:  # files of one provider can't be uploaded to a cluster simultaneously
+            self.shared_metrics[provider] = dict()
+            for cl in self.config.clusters:
                 self.buffer[provider][cl] = [True, deque()]
+                self.shared_metrics[provider][cl] = Array('i', 2)  # array of current_line, invalid_lines
 
-        def init(shared_array):
+        def init(shared_array, shared_metrics):
             Uploader.shared_array = shared_array
+            Uploader.shared_metrics = shared_metrics
 
-        self.pool = Pool(processes=self.config.workers, initializer=init, initargs=(self.shared_array,))  # forking
+        self.pool = Pool(processes=self.config.workers, initializer=init,
+                         initargs=(self.shared_array, self.shared_metrics))  # forking
         if self.config.reprocess_file:  # reprocessing given paths. We don't need to discover files
             if len(self.config.providers) != 1:
                 logger.error('You\'re using --reprocess_file, please set only one of \'%s\' provider with --providers',
@@ -672,6 +694,7 @@ class Uploader(app.App):
         logger = logging.getLogger('worker')
         logger.extra = {'provider': segfile.provider, 'segfile': segfile.name, 'cluster': cl.name}
         segfile.logger = logger
+        segfile.shared_metrics = Uploader.shared_metrics[segfile.provider][cl.name]
         try:
             cl.read_segfile_info(segfile)
         except InvalidSegmentFile as err:
