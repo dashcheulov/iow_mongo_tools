@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.19 (2019-01-06)
+-------------------
+- fixed fall in case of lack of 'metrics' in config.
+
 0.5.18 (2019-01-05)
 -------------------
 - hardened Counter with _aggregate_counters() for easy exporting metrics further.

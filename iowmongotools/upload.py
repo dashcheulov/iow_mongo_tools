@@ -637,8 +637,10 @@ class Uploader(app.App):
                         self.results.remove(result)
                         result_ready = True
                         self.consume_queue(file_emitters)
-                timer.execute(self.counter.flush_metrics, (self.config.metrics['prefix'], self.config.metrics['path']),
-                              self.config.metrics['flush_interval'])
+                if hasattr(self.config, 'metrics'):
+                    timer.execute(self.counter.flush_metrics,
+                                  (self.config.metrics['prefix'], self.config.metrics['path']),
+                                  self.config.metrics['flush_interval'])
             if not self.results:
                 self.wait_for_items(file_emitters)
             self.consume_queue(file_emitters)
@@ -646,7 +648,8 @@ class Uploader(app.App):
             if file_emitter.errors.is_set():
                 errors += 1
         timer.stop()
-        self.counter.flush_metrics(self.config.metrics['prefix'], self.config.metrics['path'])
+        if hasattr(self.config, 'metrics'):
+            self.counter.flush_metrics(self.config.metrics['prefix'], self.config.metrics['path'])
         logger.info('%s %s', self.counter, timer)
         return errors + self.counter.invalid
 

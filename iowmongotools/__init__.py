@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.5.18"
+__version__ = "0.5.19"
 __status__ = "Alpha"
 
 import logging
