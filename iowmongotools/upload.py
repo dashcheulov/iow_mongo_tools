@@ -444,7 +444,7 @@ class Counter(object):
             known_clusters.add(item[2])
         return known_clusters
 
-    def flush_metrics(self, prefix, path, from_shared_memory=True):
+    def flush_metrics(self, prefix, metrics_file, from_shared_memory=True):
         out = []
         ts = int(time.time())
         if from_shared_memory:
@@ -467,9 +467,8 @@ class Counter(object):
                           ('uploaded', counter.line_total - counter.line_invalid))
                     for metric in mp:
                         out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
-        logger.debug('Flushing %s metrics to %s', len(out), path)
-        with open(path, 'a+') as metrics_file:
-            metrics_file.write(''.join(out))
+        logger.debug('Flushing %s metrics', len(out))
+        metrics_file.write(''.join(out))
 
     def _aggregate_counters(self, providers=None, clusters=None):
         """
@@ -626,6 +625,7 @@ class Uploader(app.App):
         return self.main(errors, file_emitters, timer)
 
     def main(self, errors, file_emitters, timer):
+        metrics_file = open(self.config.metrics['path'], 'w', buffering=1)
         self.consume_queue(file_emitters)
         while self.results:
             result_ready = False
@@ -639,7 +639,7 @@ class Uploader(app.App):
                         self.consume_queue(file_emitters)
                 if hasattr(self.config, 'metrics'):
                     timer.execute(self.counter.flush_metrics,
-                                  (self.config.metrics['prefix'], self.config.metrics['path']),
+                                  (self.config.metrics['prefix'], metrics_file),
                                   self.config.metrics['flush_interval'])
             if not self.results:
                 self.wait_for_items(file_emitters)
@@ -649,8 +649,9 @@ class Uploader(app.App):
                 errors += 1
         timer.stop()
         if hasattr(self.config, 'metrics'):
-            self.counter.flush_metrics(self.config.metrics['prefix'], self.config.metrics['path'])
+            self.counter.flush_metrics(self.config.metrics['prefix'], metrics_file)
         logger.info('%s %s', self.counter, timer)
+        metrics_file.close()
         return errors + self.counter.invalid
 
     @staticmethod

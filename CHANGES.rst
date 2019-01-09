@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.20 (2019-01-09)
+-------------------
+- don't append to metrics file. Open it once at starting of 'mongo_upload'.
+
 0.5.19 (2019-01-06)
 -------------------
 - fixed fall in case of lack of 'metrics' in config.
