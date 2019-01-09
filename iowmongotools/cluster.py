@@ -165,4 +165,4 @@ class Cluster(object):
         collection = self._api[obj.strategy.database].get_collection(obj.strategy.collection,
                                                                      write_concern=pymongo.WriteConcern(**wc))
         for batch in obj.get_batch():
-            obj.counter.count_bulk_write_result(collection.bulk_write(batch, ordered=False))
+            obj.shared_metrics[2] += obj.counter.count_bulk_write_result(collection.bulk_write(batch, ordered=False))

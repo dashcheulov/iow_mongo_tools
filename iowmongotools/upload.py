@@ -81,6 +81,8 @@ class SegmentFile(object):
                 if result.modified_count is not None:
                     self.modified += result.modified_count
                 self.upserted += result.upserted_count
+                return result.matched_count + result.upserted_count
+            return 0
 
     def __init__(self, path, provider, strategy):
         if not isinstance(strategy, Strategy):
@@ -89,7 +91,7 @@ class SegmentFile(object):
             raise FileNotFoundError('File {} doesn\'t exist.'.format(path))
         self.logger = None
         self.shared_index = None
-        self.shared_metrics = [0, 0]
+        self.shared_metrics = [0, 0, 0]  # array of current_line, invalid_lines, updated docs
         self.path = path
         self.provider = provider
         self.strategy = strategy
@@ -120,7 +122,7 @@ class SegmentFile(object):
             line = f_in.readline()
             if self.type[0] == 'text/csv':
                 try:
-                    self.get_setter(line)
+                    self.get_setter(line.strip())
                 except BadLine:
                     self.log('debug', 'Seems the first line is header of csv. Skipping.')
                     line = f_in.readline()
@@ -450,11 +452,9 @@ class Counter(object):
         if from_shared_memory:
             for provider in Uploader.shared_metrics.keys():
                 for cl in Uploader.shared_metrics[provider].keys():
-                    mp = (('lines_processed', Uploader.shared_metrics[provider][cl][0]), ('uploaded',
-                                                                                          Uploader.shared_metrics[
-                                                                                              provider][cl][0] -
-                                                                                          Uploader.shared_metrics[
-                                                                                              provider][cl][1]))
+                    mp = (('lines_processed', Uploader.shared_metrics[provider][cl][0]),
+                          ('invalid', Uploader.shared_metrics[provider][cl][1]),
+                          ('uploaded', Uploader.shared_metrics[provider][cl][2]))
                     for metric in mp:
                         out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
         else:
@@ -464,7 +464,8 @@ class Counter(object):
                     if not counter:
                         return None
                     mp = (('lines_processed', counter.line_total),
-                          ('uploaded', counter.line_total - counter.line_invalid))
+                          ('invalid', counter.line_invalid),
+                          ('uploaded', counter.matched + counter.upserted))
                     for metric in mp:
                         out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
         logger.debug('Flushing %s metrics', len(out))
@@ -601,7 +602,7 @@ class Uploader(app.App):
             self.shared_metrics[provider] = dict()
             for cl in self.config.clusters:
                 self.buffer[provider][cl] = [True, deque()]
-                self.shared_metrics[provider][cl] = Array('i', 2)  # array of current_line, invalid_lines
+                self.shared_metrics[provider][cl] = Array('i', 3)  # array of current_line, invalid_lines, updated docs
 
         def init(shared_array, shared_metrics):
             Uploader.shared_array = shared_array

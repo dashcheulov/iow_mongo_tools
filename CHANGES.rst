@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.21 (2019-01-09)
+-------------------
+- added 'invalid' to metrics, Now 'uploaded' indicates matched + upserted documents.
+- strip line in checking on header of csv.
+
 0.5.20 (2019-01-09)
 -------------------
 - don't append to metrics file. Open it once at starting of 'mongo_upload'.
