@@ -182,7 +182,7 @@ class SettingsCli(Settings):
             self.__dict__.update(config)
         exclusions = self.extra_run(parser, argv)
         for key, value in self.__dict__.items():
-            if not self.description.get(key) or key in ('config_file', 'description', *exclusions):
+            if not self.description.get(key) or key in ('config_file', 'description') + exclusions:
                 continue
             if value is True:
                 parser.add_argument("--no-{}".format(key), dest=key, action='store_false', default=value,

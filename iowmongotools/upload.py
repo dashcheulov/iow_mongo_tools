@@ -674,7 +674,7 @@ class Uploader(app.App):
                       ('invalid', Uploader.shared_metrics[provider][cl][1]),
                       ('uploaded', Uploader.shared_metrics[provider][cl][2]))
                 for metric in mp:
-                    out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
+                    out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, metric[0], metric[1], ts))
                 for i in range(len(Uploader.shared_metrics[provider][cl])):  # reset counters
                     Uploader.shared_metrics[provider][cl][i] = 0
         logger.debug('Flushing %s metrics', len(out))

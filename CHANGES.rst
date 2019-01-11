@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.23 (2019-01-11)
+-------------------
+- compatibility with python 3.4.
+
 0.5.22 (2019-01-11)
 -------------------
 - resetting metrics' counters in Uploader.flush_metrics().
