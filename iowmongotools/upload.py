@@ -446,31 +446,6 @@ class Counter(object):
             known_clusters.add(item[2])
         return known_clusters
 
-    def flush_metrics(self, prefix, metrics_file, from_shared_memory=True):
-        out = []
-        ts = int(time.time())
-        if from_shared_memory:
-            for provider in Uploader.shared_metrics.keys():
-                for cl in Uploader.shared_metrics[provider].keys():
-                    mp = (('lines_processed', Uploader.shared_metrics[provider][cl][0]),
-                          ('invalid', Uploader.shared_metrics[provider][cl][1]),
-                          ('uploaded', Uploader.shared_metrics[provider][cl][2]))
-                    for metric in mp:
-                        out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
-        else:
-            for provider in self.known_providers:
-                for cl in self.known_clusters:
-                    counter = self._aggregate_counters((provider,), (cl,))
-                    if not counter:
-                        return None
-                    mp = (('lines_processed', counter.line_total),
-                          ('invalid', counter.line_invalid),
-                          ('uploaded', counter.matched + counter.upserted))
-                    for metric in mp:
-                        out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
-        logger.debug('Flushing %s metrics', len(out))
-        metrics_file.write(''.join(out))
-
     def _aggregate_counters(self, providers=None, clusters=None):
         """
         Sum all _segfile_counters by providers or/and clusters
@@ -639,8 +614,7 @@ class Uploader(app.App):
                         result_ready = True
                         self.consume_queue(file_emitters)
                 if hasattr(self.config, 'metrics'):
-                    timer.execute(self.counter.flush_metrics,
-                                  (self.config.metrics['prefix'], metrics_file),
+                    timer.execute(self.flush_metrics, (self.config.metrics['prefix'], metrics_file),
                                   self.config.metrics['flush_interval'])
             if not self.results:
                 self.wait_for_items(file_emitters)
@@ -650,7 +624,7 @@ class Uploader(app.App):
                 errors += 1
         timer.stop()
         if hasattr(self.config, 'metrics'):
-            self.counter.flush_metrics(self.config.metrics['prefix'], metrics_file)
+            self.flush_metrics(self.config.metrics['prefix'], metrics_file)
         logger.info('%s %s', self.counter, timer)
         metrics_file.close()
         return errors + self.counter.invalid
@@ -689,6 +663,22 @@ class Uploader(app.App):
         """
         self.counter.count_result(result)
         self.buffer[result[3]][result[4]][0] = True
+
+    @staticmethod
+    def flush_metrics(prefix, metrics_file):
+        out = []
+        ts = int(time.time())
+        for provider in Uploader.shared_metrics.keys():
+            for cl in Uploader.shared_metrics[provider].keys():
+                mp = (('lines_processed', Uploader.shared_metrics[provider][cl][0]),
+                      ('invalid', Uploader.shared_metrics[provider][cl][1]),
+                      ('uploaded', Uploader.shared_metrics[provider][cl][2]))
+                for metric in mp:
+                    out.append('{}.{}.{}.{} {} {}\n'.format(prefix, provider, cl, *metric, ts))
+                for i in range(len(Uploader.shared_metrics[provider][cl])):  # reset counters
+                    Uploader.shared_metrics[provider][cl][i] = 0
+        logger.debug('Flushing %s metrics', len(out))
+        metrics_file.write(''.join(out))
 
     @staticmethod
     def process_file(cluster_name, segfile):

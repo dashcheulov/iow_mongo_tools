@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.22 (2019-01-11)
+-------------------
+- resetting metrics' counters in Uploader.flush_metrics().
+
 0.5.21 (2019-01-09)
 -------------------
 - added 'invalid' to metrics, Now 'uploaded' indicates matched + upserted documents.
