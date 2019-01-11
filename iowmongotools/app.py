@@ -241,7 +241,7 @@ class SettingCliUploader(SettingCliCluster):
         if getattr(self, 'upload'):
             parser.add_argument("--{}".format('providers'), default=[p for p in self.upload.keys()],
                                 help='List of providers of segments for processing', nargs='*')
-        return (*exclusions, 'workers', 'providers')
+        return exclusions + ('workers', 'providers')
 
 
 class Command(object):
