@@ -2,7 +2,7 @@
 """ Filesystem helpers """
 import os
 import logging
-import glob
+import re
 import time
 from abc import ABC, abstractmethod
 from collections import OrderedDict
@@ -74,18 +74,21 @@ class LocalFilesObserver(Observer):
         self.path = config['path']
         if not os.path.exists(self.path):
             raise FileNotFoundError('%s doesn\'t exist.' % self.path)
-        self.filename = config.get('filename', '*')
+        self.filename = re.compile(config.get('filename', '.*'))
         self.recursive = config.get('recursive', False)
-        if self.recursive:
-            self.path = os.path.join(self.path, '**')
         self.polling_interval = config.get('polling_interval', 5)
         super().__init__(handler)
 
     @property
     def files(self):
-        return set(
-            filename for filename in glob.glob(os.path.join(self.path, self.filename), recursive=self.recursive) if
-            os.path.isfile(filename))
+        matches = set()
+        for root, dirnames, filenames in os.walk(self.path):
+            if root != self.path and not self.recursive:
+                continue
+            for filename in filenames:
+                if self.filename.match(filename):
+                    matches.add(os.path.join(root, filename))
+        return matches
 
     def run(self):
         while True:

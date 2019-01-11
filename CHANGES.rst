@@ -1,6 +1,10 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.5.24 (2019-01-11)
+-------------------
+- filename is set by regexp in upload.<provider>.delivery.local.filename
+
 0.5.23 (2019-01-11)
 -------------------
 - compatibility with python 3.4.

@@ -3,7 +3,6 @@
 import time
 import re
 import sys
-import importlib.util
 import importlib.machinery
 from abc import ABC, abstractmethod
 from iowmongotools import app
@@ -13,10 +12,7 @@ REGEXP = re.compile(r'{{([^}]+)}}')
 
 
 def load_module(path):
-    loader = importlib.machinery.SourceFileLoader(path.split('/')[-1].split('.')[0], path)
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
+    mod = importlib.machinery.SourceFileLoader(path.split('/')[-1].split('.')[0], path).load_module()
     for name, klass in mod.MAP.items():
         MAP[name] = klass
     sys.modules[mod.__name__] = mod
