@@ -39,50 +39,51 @@ class WrongFileType(ValueError):
         super().__init__('Type of file \'%s\' is \'%s\', expected %s' % (name, type, ' or '.join(allowed_types)))
 
 
+class SegfileCounter(object):
+    def __init__(self, line_total=0):
+        self.matched = 0
+        self.modified = 0
+        self.upserted = 0
+        self.line_cur = 0
+        self.line_invalid = 0
+        self.line_total = line_total
+
+    def __add__(self, other):
+        obj = SegfileCounter()
+        for key in obj.__dict__.keys():
+            obj.__dict__[key] = self.__dict__[key] + other.__dict__[key]
+        return obj
+
+    def __and__(self, other):
+        for key in ('matched', 'modified', 'upserted'):
+            self.__dict__[key] += other.__dict__[key]
+        return self
+
+    def __str__(self):
+        docs = list()
+        for name, val in self.__dict__.items():
+            if not val and name != 'matched' or 'line' in name:
+                continue
+            docs.append('{} - {}'.format(name, val))
+        return 'Lines: total - {}, invalid - {}. Documents: {}.'.format(self.line_total, self.line_invalid,
+                                                                        ', '.join(docs))
+
+    def count_bulk_write_result(self, result):
+        if result.acknowledged:
+            self.matched += result.matched_count
+            if result.modified_count is not None:
+                self.modified += result.modified_count
+            self.upserted += result.upserted_count
+            return result.matched_count + result.upserted_count
+        return 0
+
+
 class SegmentFile(object):
     """ Represents file containing segments """
     SEPARATORS_MAP = {
         'text/tab-separated-values': '\t',
         'text/csv': ','
     }
-
-    class Counter(object):
-        def __init__(self, line_total=0):
-            self.matched = 0
-            self.modified = 0
-            self.upserted = 0
-            self.line_cur = 0
-            self.line_invalid = 0
-            self.line_total = line_total
-
-        def __add__(self, other):
-            obj = SegmentFile.Counter()
-            for key in obj.__dict__.keys():
-                obj.__dict__[key] = self.__dict__[key] + other.__dict__[key]
-            return obj
-
-        def __and__(self, other):
-            for key in ('matched', 'modified', 'upserted'):
-                self.__dict__[key] += other.__dict__[key]
-            return self
-
-        def __str__(self):
-            docs = list()
-            for name, val in self.__dict__.items():
-                if not val and name != 'matched' or 'line' in name:
-                    continue
-                docs.append('{} - {}'.format(name, val))
-            return 'Lines: total - {}, invalid - {}. Documents: {}.'.format(self.line_total, self.line_invalid,
-                                                                            ', '.join(docs))
-
-        def count_bulk_write_result(self, result):
-            if result.acknowledged:
-                self.matched += result.matched_count
-                if result.modified_count is not None:
-                    self.modified += result.modified_count
-                self.upserted += result.upserted_count
-                return result.matched_count + result.upserted_count
-            return 0
 
     def __init__(self, path, provider, strategy):
         if not isinstance(strategy, Strategy):
@@ -106,7 +107,7 @@ class SegmentFile(object):
         self.invalid = False
         self.processed = False
         self.timer = Timer()
-        self.counter = self.Counter()
+        self.counter = SegfileCounter()
 
     def __gt__(self, other):
         return os.stat(self.path).st_mtime > os.stat(other.path).st_mtime
@@ -251,9 +252,10 @@ class Strategy(object):
         self.input = dict()
         for file_type in self.allowed_types:
             self.input[file_type] = {'titles': [], 'patterns': []}
-            for title, pattern in config['input'][file_type].items():
-                self.input[file_type]['titles'].append(title)
-                self.input[file_type]['patterns'].append(re.compile(pattern))
+            for field in config['input'][file_type]:
+                for title, pattern in field.items():
+                    self.input[file_type]['titles'].append(title)
+                    self.input[file_type]['patterns'].append(re.compile(pattern))
         self.output = config['update']
         if '_id' not in self.output:
             raise AttributeError('Section \'update\' must have field \'_id\'')
@@ -281,7 +283,7 @@ class Strategy(object):
             raise BadLine
         dict_line = dict()
         for index in range(len(config['titles'])):
-            if not config['patterns'][index].match(line[index]):  # validation
+            if not config['patterns'][index].match(line[index].strip()):  # validation
                 raise BadLine
             dict_line[config['titles'][index]] = line[index].strip()
         return self._parse_output(self.output, dict_line)
@@ -449,7 +451,7 @@ class Counter(object):
     def _aggregate_counters(self, providers=None, clusters=None):
         """
         Sum all _segfile_counters by providers or/and clusters
-        :return: united object of SegmentFile.Counter or empty str
+        :return: united object of SegfileCounter or empty str
         """
         if not self._segfile_counters:
             return ''
@@ -481,7 +483,7 @@ class Counter(object):
             self._invalid_files.add(item[0])
         if item[1:3] == (0, None) and signature not in self._segfile_counters:
             self._skipped_files.add(item[0])
-        if isinstance(item[2], SegmentFile.Counter):
+        if isinstance(item[2], SegfileCounter):
             if signature not in self._segfile_counters:
                 self._segfile_counters[signature] = item[2]
             self._skipped_files.discard(item[0])
@@ -654,7 +656,7 @@ class Uploader(app.App):
             for cl in cluster.Cluster.objects.keys():
                 if self.buffer[provider][cl][0] and self.buffer[provider][cl][1]:
                     self.results.append(
-                        self.pool.apply_async(self.process_file, (cl, self.buffer[provider][cl][1].popleft())))
+                        self.pool.apply_async(process_file, (cl, self.buffer[provider][cl][1].popleft())))
                     self.buffer[provider][cl][0] = False
 
     def handle_result(self, result):
@@ -680,42 +682,42 @@ class Uploader(app.App):
         logger.debug('Flushing %s metrics', len(out))
         metrics_file.write(''.join(out))
 
-    @staticmethod
-    def process_file(cluster_name, segfile):
-        """
-        :return: (error_code, counter)
-        """
-        cl = cluster.Cluster.objects[cluster_name]
-        logger = logging.getLogger('worker')
-        logger.extra = {'provider': segfile.provider, 'segfile': segfile.name, 'cluster': cl.name}
-        segfile.logger = logger
-        segfile.shared_metrics = Uploader.shared_metrics[segfile.provider][cl.name]
-        try:
-            cl.read_segfile_info(segfile)
-        except InvalidSegmentFile as err:
-            logger.error(err)
-            return segfile.name, 1, None, segfile.provider, cl.name
-        if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
-            logger.debug('The file has already been uploaded. Skipping.')
-            return segfile.name, 0, None, segfile.provider, cl.name
-        if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
-            logger.debug('The file is invalid. Skipping.')
-            return segfile.name, 0, None, segfile.provider, cl.name
-        if segfile.invalid:
-            logger.info('The file was invalid. Reprocessing.')
-        elif segfile.processed:
-            logger.info('The file was uploaded successfully at %s. Reprocessing.',
-                        time.strftime('%d %b %Y %H:%M', time.localtime(segfile.timer.finished_ts)))
-        else:
-            logger.info('Starting uploading file \'%s\'.', segfile.path)
-        try:
-            cl.upload_segfile(segfile)
-        except InvalidSegmentFile as err:
-            logger.error(err)
-            return segfile.name, 1, segfile.counter, segfile.provider, cl.name
-        else:
-            segfile.processed = True
-        finally:
-            cl.save_segfile_info(segfile)
-            logger.info('Finished %s. %s %s', segfile.path, segfile.counter, segfile.timer)
-        return segfile.name, 1 if segfile.invalid else 0, segfile.counter, segfile.provider, cl.name
+
+def process_file(cluster_name, segfile):
+    """
+    :return: (error_code, counter)
+    """
+    cl = cluster.Cluster.objects[cluster_name]
+    logger = logging.getLogger('worker')
+    logger.extra = {'provider': segfile.provider, 'segfile': segfile.name, 'cluster': cl.name}
+    segfile.logger = logger
+    segfile.shared_metrics = Uploader.shared_metrics[segfile.provider][cl.name]
+    try:
+        cl.read_segfile_info(segfile)
+    except InvalidSegmentFile as err:
+        logger.error(err)
+        return segfile.name, 1, None, segfile.provider, cl.name
+    if segfile.processed and not segfile.invalid and not segfile.strategy.force_reprocess:
+        logger.debug('The file has already been uploaded. Skipping.')
+        return segfile.name, 0, None, segfile.provider, cl.name
+    if segfile.invalid and not segfile.strategy.reprocess_invalid and not segfile.strategy.force_reprocess:
+        logger.debug('The file is invalid. Skipping.')
+        return segfile.name, 0, None, segfile.provider, cl.name
+    if segfile.invalid:
+        logger.info('The file was invalid. Reprocessing.')
+    elif segfile.processed:
+        logger.info('The file was uploaded successfully at %s. Reprocessing.',
+                    time.strftime('%d %b %Y %H:%M', time.localtime(segfile.timer.finished_ts)))
+    else:
+        logger.info('Starting uploading file \'%s\'.', segfile.path)
+    try:
+        cl.upload_segfile(segfile)
+    except InvalidSegmentFile as err:
+        logger.error(err)
+        return segfile.name, 1, segfile.counter, segfile.provider, cl.name
+    else:
+        segfile.processed = True
+    finally:
+        cl.save_segfile_info(segfile)
+        logger.info('Finished %s. %s %s', segfile.path, segfile.counter, segfile.timer)
+    return segfile.name, 1 if segfile.invalid else 0, segfile.counter, segfile.provider, cl.name

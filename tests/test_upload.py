@@ -35,11 +35,11 @@ def test_strategy_parse_output():
 
 
 def test_strategy_get_setter():
-    sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': {
-        'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$',
-        'bluekai_id': '.*',
-        'campaign_ids': '.*',
-        'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}},
+    sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': [{
+        'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$'},
+        {'bluekai_id': '.*'},
+        {'campaign_ids': '.*'},
+        {'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}]},
         'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}}, 'collection': 'a.b'})
     expiration_ts = int(time.time() + 2592000)  # 30 days
     assert sample_strategy.get_setter(
@@ -63,7 +63,7 @@ def test_strategy_get_setter():
 
 def test_strategy_list_of_used_templates():
     sample_strategy = upload.Strategy(
-        {'input': {'text/csv': {}}, 'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}},
+        {'input': {'text/csv': [{}]}, 'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}},
          'collection': 'a.b'})
     assert sample_strategy.set_of_used_templates(sample_strategy.output) == {'user_id', 'hash_of_segments'}
     assert sample_strategy.set_of_used_templates(
@@ -78,13 +78,13 @@ def test_segfile_counter():
             self.modified_count = modified_count
             self.upserted_count = upserted_count
 
-    sample_counter = upload.SegmentFile.Counter()
+    sample_counter = upload.SegfileCounter()
     for result in ((1, 0, 1), (1, 0, 0), (0, 0, 1)):
         sample_counter.count_bulk_write_result(MockResult(*result))
     assert (sample_counter.matched, sample_counter.modified, sample_counter.upserted) == (2, 0, 2)
     assert str(sample_counter) == 'Lines: total - 0, invalid - 0. Documents: matched - 2, upserted - 2.'
     sample_counter.line_total += 1
-    sample_counter2 = upload.SegmentFile.Counter()
+    sample_counter2 = upload.SegfileCounter()
     sample_counter2.line_total += 1
     for result in ((1, 2, 0), (0, 1, 0), (2, 0, 0)):
         sample_counter2.count_bulk_write_result(MockResult(*result))
@@ -142,7 +142,7 @@ def test_counter():
     sample_counter = upload.Counter()
     for filename in ['file{}'.format(i) for i in range(10)]:
         for cluster in range(4):
-            segfilecnt = upload.SegmentFile.Counter()
+            segfilecnt = upload.SegfileCounter()
             segfilecnt.matched = 1
             segfilecnt.upserted = 1
             segfilecnt.line_total = 10
@@ -156,7 +156,7 @@ def test_counter():
     sample_counter = upload.Counter()
     for filename in ['file{}'.format(i) for i in range(5)]:
         for cluster in range(3):
-            segfilecnt = upload.SegmentFile.Counter()
+            segfilecnt = upload.SegfileCounter()
             segfilecnt.matched = 0
             segfilecnt.modified = 2
             segfilecnt.line_total = 4
@@ -177,7 +177,7 @@ def test_counter():
     for filename in ['file{}'.format(i) for i in range(5)]:
         sample_counter.count_result((filename, 0, None, 'provider', 's'))
     for cluster in range(2):
-        segfilecnt = upload.SegmentFile.Counter()
+        segfilecnt = upload.SegfileCounter()
         segfilecnt.matched = 5
         segfilecnt.modified = 5
         segfilecnt.upserted = 1
@@ -195,9 +195,9 @@ def test_segment_file_tsv(tmpdir):
     tsv_file = tmpdir.join('tsv_file.tsv')
     tsv_file.write('''f35ac18d-de62-42d1-97b5-ac6136187451\t1995228346
     0100e0ba-5c29-4d2c-8a23-0c2e76bc38df\t1000812376''')
-    sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': {
-        'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$',
-        'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}},
+    sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': [{
+        'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$'},
+        {'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}]},
         'update': {'_id': "{{user_id}}", 'lvmp': '{{segments}}'}, 'collection': 'a.b'})
     with pytest.raises(FileNotFoundError):
         upload.SegmentFile('liveramp', 'unexistent_file', sample_strategy)

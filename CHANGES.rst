@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.6.0 (2019-01-13)
+-------------------
+- upload.<provider>.input became ordered.
+- moved Segfile.Counter and Uploader.process_file to top level in order to pickle by pickler of python 3.4
+
 0.5.24 (2019-01-11)
 -------------------
 - filename is set by regexp in upload.<provider>.delivery.local.filename
