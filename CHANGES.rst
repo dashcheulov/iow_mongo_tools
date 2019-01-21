@@ -1,6 +1,11 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.7.0 (2019-01-21)
+-------------------
+- upload.<provider>.update_one has appeared instead upload.<provider>.update. It contains two subsections: 'filter' and 'update'
+- upload.<provider>.update_one.update may contain either '$set' or '$unset'. If it contains both of them, query will be divided to two queries with the same filter: one with '$set', other with '$unset'.
+
 0.6.0 (2019-01-13)
 -------------------
 - upload.<provider>.input became ordered.

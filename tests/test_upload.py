@@ -12,14 +12,16 @@ def test_strategy_without_defined_update():
 
 def test_strategy_timestamp():
     sample_strategy = upload.Strategy(
-        {'input': {'text/csv': {}}, 'update': {'_id': '{{timestamp}}'}, 'collection': 'a.b'})
+        {'input': {'text/csv': {}}, 'update_one': {'filter': {}, 'update': {'_id': '{{timestamp}}'}},
+         'collection': 'a.b'})
     current_ts = int(time.time())
-    assert sample_strategy.get_setter('', {'titles': {}}) == {'_id': current_ts}
+    assert sample_strategy.get_setter('', {'titles': {}}) == {'filter': {}, 'update': {'_id': current_ts}}
 
 
 def test_strategy_parse_output():
     sample_strategy = upload.Strategy(
-        {'input': {'text/csv': {}}, 'update': {'_id': '{{uuid}}', 'dmp': '{{hash_of_segments}}'}, 'collection': 'a.b'})
+        {'input': {'text/csv': {}},
+         'update_one': {'filter': {'_id': '{{uuid}}'}, 'update': {'dmp': '{{hash_of_segments}}'}}, 'collection': 'a.b'})
     assert sample_strategy._parse_output(
         {'_id': "{{user_id}}", 'dmp': {'bk': '{hash_of_segments}', 'fra': 'rg', 'some_key': '{{some_key}}'}},
         {'user_id': 'wefv', 'some_key': 'some_val'}) == {'_id': 'wefv', 'dmp': {'bk': '{hash_of_segments}', 'fra': 'rg',
@@ -40,20 +42,21 @@ def test_strategy_get_setter():
         {'bluekai_id': '.*'},
         {'campaign_ids': '.*'},
         {'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}]},
-        'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}}, 'collection': 'a.b'})
+        'update_one': {'filter': {'_id': "{{user_id}}"}, 'update': {'dmp': {'bk': '{{hash_of_segments}}'}}},
+        'collection': 'a.b'})
     expiration_ts = int(time.time() + 2592000)  # 30 days
     assert sample_strategy.get_setter(
         ['cd59f2ca-5480-4fb9-b580-2e2f3194ce96', 'K68zJkWO99eQaG2q', '312041', '678269,678272,765488,408098'],
         sample_strategy.input['text/tab-separated-values']) == {
-               '_id': 'cd59f2ca-5480-4fb9-b580-2e2f3194ce96',
-               'dmp': {'bk': {'408098': expiration_ts,
-                              '678269': expiration_ts,
-                              '678272': expiration_ts,
-                              '765488': expiration_ts}}}
+               'filter': {'_id': 'cd59f2ca-5480-4fb9-b580-2e2f3194ce96'},
+               'update': {'dmp': {'bk': {'408098': expiration_ts,
+                                         '678269': expiration_ts,
+                                         '678272': expiration_ts,
+                                         '765488': expiration_ts}}}}
     assert sample_strategy.get_setter(['b6dabebf-8e48-4465-a0dd-9a705b607255', '(UN', '$#D', '6782_s69,6'],
                                       sample_strategy.input['text/tab-separated-values']) == {
-               '_id': 'b6dabebf-8e48-4465-a0dd-9a705b607255',
-               'dmp': {'bk': {'6': expiration_ts, '6782_s69': expiration_ts}}}
+               'filter': {'_id': 'b6dabebf-8e48-4465-a0dd-9a705b607255'},
+               'update': {'dmp': {'bk': {'6': expiration_ts, '6782_s69': expiration_ts}}}}
     with pytest.raises(upload.BadLine):
         sample_strategy.get_setter(['b', 'e', '4', '6782_s69,6'], sample_strategy.input['text/tab-separated-values'])
     with pytest.raises(upload.BadLine):
@@ -63,11 +66,13 @@ def test_strategy_get_setter():
 
 def test_strategy_list_of_used_templates():
     sample_strategy = upload.Strategy(
-        {'input': {'text/csv': [{}]}, 'update': {'_id': "{{user_id}}", 'dmp': {'bk': '{{hash_of_segments}}'}},
+        {'input': {'text/csv': [{}]},
+         'update_one': {'filter': {'_id': "{{user_id}}"}, 'update': {'dmp': {'bk': '{{hash_of_segments}}'}}},
          'collection': 'a.b'})
     assert sample_strategy.set_of_used_templates(sample_strategy.output) == {'user_id', 'hash_of_segments'}
     assert sample_strategy.set_of_used_templates(
-        {'_id': "{{s}}", 'q': {'bk': '{{w}}', 'c': '{{g}}'}, 't': '{{g}}', 'v': {'w': '{{n}}'}}) == {'s', 'w', 'g', 'n'}
+        {'filter': {'_id': "{{s}}"},
+         'update': {'q': {'bk': '{{w}}', 'c': '{{g}}'}, 't': '{{g}}', 'v': {'w': '{{n}}'}}}) == {'s', 'w', 'g', 'n'}
 
 
 def test_segfile_counter():
@@ -198,17 +203,19 @@ def test_segment_file_tsv(tmpdir):
     sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': [{
         'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$'},
         {'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}]},
-        'update': {'_id': "{{user_id}}", 'lvmp': '{{segments}}'}, 'collection': 'a.b'})
+        'update_one': {'filter': {'_id': "{{user_id}}"}, 'update': {'$set': {'lvmp': '{{segments}}'}}},
+        'collection': 'a.b'})
     with pytest.raises(FileNotFoundError):
         upload.SegmentFile('liveramp', 'unexistent_file', sample_strategy)
     segfile = upload.SegmentFile(str(tsv_file.realpath()), 'liveramp', sample_strategy)
     assert list(segfile.get_line()) == ['f35ac18d-de62-42d1-97b5-ac6136187451\t1995228346',
                                         '0100e0ba-5c29-4d2c-8a23-0c2e76bc38df\t1000812376']
-    assert segfile.get_setter(next(segfile.get_line())) == {'_id': 'f35ac18d-de62-42d1-97b5-ac6136187451',
-                                                            'lvmp': '1995228346'}
+    assert segfile.get_setter(next(segfile.get_line())) == [upload.UpdateOne(
+        {'_id': 'f35ac18d-de62-42d1-97b5-ac6136187451'},
+        {'$set': {'lvmp': '1995228346'}})]
     assert next(segfile.get_batch()) == [
-        upload.UpdateOne({'_id': 'f35ac18d-de62-42d1-97b5-ac6136187451'}, {'lvmp': '1995228346'}, False, None, None),
-        upload.UpdateOne({'_id': '0100e0ba-5c29-4d2c-8a23-0c2e76bc38df'}, {'lvmp': '1000812376'}, False, None, None)]
+        upload.UpdateOne({'_id': 'f35ac18d-de62-42d1-97b5-ac6136187451'}, {'$set': {'lvmp': '1995228346'}}, False),
+        upload.UpdateOne({'_id': '0100e0ba-5c29-4d2c-8a23-0c2e76bc38df'}, {'$set': {'lvmp': '1000812376'}}, False)]
     with pytest.raises(upload.InvalidSegmentFile):
         segfile.load_metadata({'provider': 'lotame', 'invalid': True,
                                'processed': True,
@@ -249,7 +256,8 @@ def test_file_emitter(tmpdir):
     csv_file = tmpdir.join('csv_file.csv')
     csv_file.write('s')
     file_emitter = upload.FileEmitter('liveramp', {'delivery': {'local': {'path': '/tmp'}}, 'input': {'text/csv': {}},
-                                                   'update': {'_id': '{{uuid}}', 'dmp': '{{hash_of_segments}}'},
+                                                   'update_one': {'filter': {'_id': '{{uuid}}'},
+                                                                  'update': {'dmp': '{{hash_of_segments}}'}},
                                                    'collection': 'a.b'})
     file_emitter.on_file_discovered(str(tsv_file.realpath()))
     assert file_emitter.errors.is_set()

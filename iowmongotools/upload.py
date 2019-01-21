@@ -82,7 +82,8 @@ class SegmentFile(object):
     """ Represents file containing segments """
     SEPARATORS_MAP = {
         'text/tab-separated-values': '\t',
-        'text/csv': ','
+        'text/csv': ',',
+        'text/space-separated-values': ' '
     }
 
     def __init__(self, path, provider, strategy):
@@ -133,11 +134,16 @@ class SegmentFile(object):
             self.log('debug', 'Closing the file')
 
     def get_setter(self, line_str):
+        out = list()
         try:
-            return self.strategy.get_setter(line_str.split(self.SEPARATORS_MAP[self.type[0]]),
-                                            self.strategy.input[self.type[0]])
+            setter = self.strategy.get_setter(line_str.split(self.SEPARATORS_MAP[self.type[0]]),
+                                              self.strategy.input[self.type[0]])
         except BadLine:
             raise BadLine('Line \'{}\' is invalid.'.format(line_str))
+        for key in ('$set', '$unset'):  # divide to 2 query because of https://jira.mongodb.org/browse/SERVER-11285
+            if key in setter['update']:
+                out.append(UpdateOne(setter['filter'], {key: setter['update'][key]}, upsert=self.strategy.upsert))
+        return out
 
     def get_batch(self):
         ilc = 0  # counter of invalid lines in a batch
@@ -153,8 +159,7 @@ class SegmentFile(object):
         for line in self.get_line():
             self.counter.line_cur += 1
             try:
-                line = self.get_setter(line)
-                batch.append(UpdateOne({'_id': line.pop('_id')}, line, upsert=self.strategy.upsert))
+                batch.extend(self.get_setter(line))
             except BadLine as err:
                 if self.strategy.log_invalid_lines:
                     self.log('warning', '#{}. {}'.format(self.counter.line_cur, err))
@@ -241,8 +246,8 @@ class SegmentFile(object):
 class Strategy(object):
 
     def __init__(self, config):
-        if 'input' not in config or 'update' not in config:
-            raise AttributeError('Uploading strategy must have both sections \'input\' and \'update\'')
+        if 'input' not in config or 'update_one' not in config:
+            raise AttributeError('Uploading strategy must have both sections \'input\' and \'update_one\'')
         if 'collection' not in config or len(config.get('collection', '').split('.')) != 2:
             raise AttributeError('Parameter \'collection\' is mandatory. Set as \'database.collection\'')
         self.allowed_types = frozenset(ft for ft in SegmentFile.SEPARATORS_MAP.keys() if ft in config['input'])
@@ -256,9 +261,9 @@ class Strategy(object):
                 for title, pattern in field.items():
                     self.input[file_type]['titles'].append(title)
                     self.input[file_type]['patterns'].append(re.compile(pattern))
-        self.output = config['update']
-        if '_id' not in self.output:
-            raise AttributeError('Section \'update\' must have field \'_id\'')
+        self.output = config['update_one']
+        if 'filter' not in self.output or 'update' not in self.output:
+            raise AttributeError('Section \'update_one\' must have both sections \'filter\' and \'update\'')
         self.database, self.collection = config['collection'].split('.')
         templates_params = config.get('templates', dict())
         self.templates = dict()
@@ -266,6 +271,7 @@ class Strategy(object):
             self.templates[name] = templates.MAP[name](templates_params.get(name))
         self.batch_size = config.get('batch_size', 1000)
         self.reprocess_invalid = config.get('reprocess_invalid', False)
+        self.fixed_line_size = config.get('fixed_line_size', True)
         self.force_reprocess = config.get('force_reprocess', False)
         self.process_invalid_file_to_end = config.get('process_invalid_file_to_end', True)
         self.upsert = config.get('upsert', False)
@@ -279,10 +285,10 @@ class Strategy(object):
         self.write_concern = config.get('write_concern')
 
     def get_setter(self, line, config):
-        if len(config['titles']) != len(line):
+        if self.fixed_line_size and len(config['titles']) != len(line):
             raise BadLine
         dict_line = dict()
-        for index in range(len(config['titles'])):
+        for index in range(len(line)):
             if not config['patterns'][index].match(line[index].strip()):  # validation
                 raise BadLine
             dict_line[config['titles'][index]] = line[index].strip()

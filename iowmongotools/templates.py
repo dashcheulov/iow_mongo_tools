@@ -37,12 +37,15 @@ class HashOfSegments(Template):
         self.config = {
             'segment_separator': config.get('segment_separator', ','),
             'retention': app.human_to_seconds(config.get('retention', '30D')),
-            'segment_field_name': config.get('segment_field_name', 'segments')
+            'segment_field_name': config.get('segment_field_name', 'segments'),
+            'path': config.get('path', None),
         }
 
     def apply(self, dict_line):
         output = dict()
         for segment in dict_line[self.config['segment_field_name']].split(self.config['segment_separator']):
+            if self.config['path']:
+                segment = '.'.join((self.config['path'], segment))  # absolute path
             output[segment] = int(time.time() + self.config['retention'])
         return output
 
