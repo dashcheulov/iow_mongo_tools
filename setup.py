@@ -7,7 +7,7 @@ with open(path.join(here, 'README.rst')) as f:
 
 setup(
     name='iow-mongo-tools',
-    version='0.7.0',
+    version='0.7.1',
     description='Various tools for maintenance mongo cluster',
     long_description=long_description,
     url='https://confluence.iponweb.net/display/OPS/iow-mongo-tools',
@@ -20,7 +20,7 @@ setup(
         'Intended Audience :: IOW PMs',
         'License :: OSI Approved :: GPL-3.0+',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.4',
     ],
     keywords='mongo iow',
     packages=find_packages(),

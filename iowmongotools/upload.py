@@ -124,12 +124,12 @@ class SegmentFile(object):
             line = f_in.readline()
             if self.type[0] == 'text/csv':
                 try:
-                    self.get_setter(line.strip())
+                    self.get_setter(line.strip('\n'))
                 except BadLine:
                     self.log('debug', 'Seems the first line is header of csv. Skipping.')
                     line = f_in.readline()
             while line:
-                yield line.strip()
+                yield line.strip('\n')
                 line = f_in.readline()
             self.log('debug', 'Closing the file')
 

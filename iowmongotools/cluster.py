@@ -70,21 +70,28 @@ class Cluster(object):
         commands = {
             'add_shards': [app.Command(self._api.admin.command, ('addshard', shard), {'name': shard.split('.')[0]},
                                        'adding shard %s to %s' % (shard, self.name),
-                                       {'shardAdded': shard.split('.')[0], 'ok': 1.0}) for shard in
-                           self._declared_config['shards']],
+                                       lambda x: x.get('ok') == 1.0) for shard in self._declared_config['shards']],
             'enable_sharding': [app.Command(self._api.admin.command, ('enableSharding', db_name),
                                             description='enabling sharding for database %s' % db_name,
-                                            good_result={'ok': 1.0}) for db_name in sharded_dbs],
+                                            check_result=lambda x: x.get('ok') == 1.0) for db_name in sharded_dbs],
             'shard_collections': [app.Command(self._api.admin.command, ('shardCollection', name), params,
                                               'enabling sharding for collection %s by %s' % (name, params),
-                                              {'collectionsharded': name, 'ok': 1.0})
+                                              lambda x: x.get('ok') == 1.0)
                                   for name, params in self._declared_config['collections'].items()],
             'pre_remove_dbs': app.Command(self.drop_databases_from_shards, (pre_remove_dbs, force),
                                           description='{} databases {} on each mongod'.format(
                                               'checking for existing' if not pre_remove_dbs else 'removing',
-                                              ', '.join(pre_remove_dbs)))
+                                              ', '.join(pre_remove_dbs)), check_result=lambda x: x == 0),
+            'waiting_shards': app.Command(self.count_shards, description='checking amount of added shards',
+                                          check_result=lambda x: x == len(self._declared_config['shards']), retries=5),
+            'disable_balancer': app.Command(self._api.config.settings.update,
+                                            ({'_id': 'balancer'}, {'$set': {'stopped': True}}, True),
+                                            description='disabling balancer', check_result=lambda x: x.get('ok') == 1.0)
         }
         return commands
+
+    def count_shards(self):
+        return len(self._api.admin.command('listShards', 1).get('shards', tuple()))
 
     def drop_databases_from_shards(self, dbs, force=False):
         pool = ThreadPool(processes=min(len(self._declared_config['shards']), 5))

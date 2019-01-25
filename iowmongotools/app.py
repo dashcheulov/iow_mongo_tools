@@ -4,6 +4,7 @@ import os
 import logging
 import logging.config
 from abc import ABC, abstractmethod
+from time import sleep
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import subprocess
 import yaml
@@ -214,7 +215,8 @@ class SettingCliCluster(SettingsCli):
     def cleanup(self):
         if self.tmp['cluster_config']:
             self.cluster_config = self.tmp['cluster_config']
-            self.clusters = set(self.clusters)
+            if hasattr(self, 'clusters'):
+                self.clusters = set(self.clusters)
         if not getattr(self, 'cluster_config'):
             delattr(self, 'cluster_config')
 
@@ -246,7 +248,8 @@ class SettingCliUploader(SettingCliCluster):
 
 class Command(object):
 
-    def __init__(self, kallable, args=tuple(), kwargs=dict(), description=str(), good_result=0):
+    def __init__(self, kallable, args=tuple(), kwargs=dict(), description=str(), check_result=None, retries=1,
+                 sleep_time=3):
         if not hasattr(kallable, '__call__'):
             raise TypeError("%s executes only callable objects" % Command.__name__)
         if not isinstance(args, (tuple, list)):
@@ -257,7 +260,9 @@ class Command(object):
         self.args = args
         self.kwargs = kwargs
         self.description = description
-        self.good_result = good_result
+        self.check_result = check_result or (lambda x: True)
+        self.retries = retries
+        self.sleep_time = sleep_time
 
     def execute(self):
         logger.info(self)
@@ -284,7 +289,19 @@ class Invoker(object):
     def execute(self, force=False):
         errors = 0
         for command in self.registry:
-            if command.execute() != command.good_result:
+            ok = False
+            for i in range(command.retries):
+                result = command.execute()
+                if command.check_result(result):
+                    logger.debug('Responce \'%s\'', result)
+                    ok = True
+                    break
+                if i + 1 < command.retries:
+                    logging.warning('Command failed with response \'%s\'. Retrying in %s s.', result, command.sleep_time)
+                    sleep(command.sleep_time)
+                else:
+                    logging.warning('Command failed with response \'%s\'.', result)
+            if not ok:
                 errors += 1
                 if not force:
                     break

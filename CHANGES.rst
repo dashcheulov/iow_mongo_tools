@@ -1,6 +1,14 @@
 Changelog (iow-mongo-tools)
 ===========================
 
+0.7.1 (2019-01-25)
+-------------------
+- added retries and made checking result callable in app.Command
+- added disabling balancer and check amount of shards to 'mongo_set'
+- stripping entire line only by '\n' while reading a file in mongo_uploader.
+- fixed exception with empty 'cluster' in app.SettingCliUploader.cleanup()
+- added steps of disabling balancer and checking amount of shards to 'mongo_set'
+
 0.7.0 (2019-01-21)
 -------------------
 - upload.<provider>.update_one has appeared instead upload.<provider>.update. It contains two subsections: 'filter' and 'update'

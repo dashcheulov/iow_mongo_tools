@@ -198,8 +198,8 @@ def test_segment_file_tsv(tmpdir):
     with pytest.raises(TypeError):
         upload.SegmentFile('liveramp', 'unexistent_file', 'not_strategy')
     tsv_file = tmpdir.join('tsv_file.tsv')
-    tsv_file.write('''f35ac18d-de62-42d1-97b5-ac6136187451\t1995228346
-    0100e0ba-5c29-4d2c-8a23-0c2e76bc38df\t1000812376''')
+    tsv_file.write(
+        '''f35ac18d-de62-42d1-97b5-ac6136187451\t1995228346\n0100e0ba-5c29-4d2c-8a23-0c2e76bc38df\t1000812376''')
     sample_strategy = upload.Strategy({'input': {'text/tab-separated-values': [{
         'user_id': '^[a-f0-9]{8}-?[a-f0-9]{4}-?4[a-f0-9]{3}-?[89ab][a-f0-9]{3}-?[a-f0-9]{12}$'},
         {'segments': '^[0-9a-z_]+(?:,[0-9a-z_]+)*$'}]},

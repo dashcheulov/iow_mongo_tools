@@ -1,6 +1,6 @@
 """ Main module """
 __author__ = "Denis Ashcheulov"
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 __status__ = "Alpha"
 
 import logging
@@ -56,9 +56,9 @@ class MongoSetCli(app.AppCli):
         invoker = app.Invoker()
         actual_config = cluster.actual_config
         commands = cluster.generate_commands(self.config.pre_remove_dbs, self.config.force)
+        invoker.add(commands['disable_balancer'])
         if len(actual_config['shards']) == 0 or self.config.force:
-            invoker.add(commands['pre_remove_dbs'])
-            invoker.add(commands['add_shards'])
+            invoker.add([commands[name] for name in ('pre_remove_dbs', 'add_shards', 'waiting_shards')])
         else:
             logger.warning('There are already shards %s at cluster %s. Skipping adding shards', actual_config['shards'],
                            cluster.name)
