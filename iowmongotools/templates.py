@@ -7,7 +7,6 @@ import importlib.machinery
 from abc import ABC, abstractmethod
 from iowmongotools import app
 
-
 REGEXP = re.compile(r'{{([^}]+)}}')
 
 
@@ -50,6 +49,28 @@ class HashOfSegments(Template):
         return output
 
 
+class SegmentsWithTimestamp(Template):
+    def __init__(self, config=None):
+        if not config:
+            config = dict()
+        self.config = {
+            'timestamp_separator': config.get('timestamp_separator', ':'),
+            'srting_pattern': config.get('srting_pattern', '{{segments_string}}{{timestamp_separator}}{{timestamp}}'),
+            'segment_field_name': config.get('segment_field_name', 'segments'),
+            'segment_separator': config.get('segment_separator', ','),
+            'replacement_segment_separator': config.get('replacement_segment_separator'),
+        }
+
+    def apply(self, dict_line):
+        segments_str = self.config['replacement_segment_separator'].join(
+            dict_line[self.config['segment_field_name']].split(self.config['segment_separator'])) if self.config[
+            'replacement_segment_separator'] else dict_line[self.config['segment_field_name']]
+        return self.config['srting_pattern'] \
+            .replace('{{segments_string}}', segments_str) \
+            .replace('{{timestamp_separator}}', self.config['timestamp_separator']) \
+            .replace('{{timestamp}}', str(int(time.time())))
+
+
 class Timestamp(Template):
     def apply(self, dict_line):
         return int(time.time())
@@ -57,5 +78,6 @@ class Timestamp(Template):
 
 MAP = {
     'hash_of_segments': HashOfSegments,
+    'segments_str': SegmentsWithTimestamp,
     'timestamp': Timestamp
 }

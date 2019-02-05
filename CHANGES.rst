@@ -1,10 +1,15 @@
-Changelog (iow-mongo-tools)
-===========================
+Changelog
+=========
+
+0.7.2 (2019-02-05)
+-------------------
+- added template SegmentsWithTimestamp.
+- renamed 'Documents' to 'Requests to mongo' in summarise.
+- upload.Strategy.set_of_used_templates() failed with not strings. fixed
 
 0.7.1 (2019-01-25)
 -------------------
 - added retries and made checking result callable in app.Command
-- added disabling balancer and check amount of shards to 'mongo_set'
 - stripping entire line only by '\n' while reading a file in mongo_uploader.
 - fixed exception with empty 'cluster' in app.SettingCliUploader.cleanup()
 - added steps of disabling balancer and checking amount of shards to 'mongo_set'

@@ -87,18 +87,18 @@ def test_segfile_counter():
     for result in ((1, 0, 1), (1, 0, 0), (0, 0, 1)):
         sample_counter.count_bulk_write_result(MockResult(*result))
     assert (sample_counter.matched, sample_counter.modified, sample_counter.upserted) == (2, 0, 2)
-    assert str(sample_counter) == 'Lines: total - 0, invalid - 0. Documents: matched - 2, upserted - 2.'
+    assert str(sample_counter) == 'Lines: total - 0, invalid - 0. Requests to mongo: matched - 2, upserted - 2.'
     sample_counter.line_total += 1
     sample_counter2 = upload.SegfileCounter()
     sample_counter2.line_total += 1
     for result in ((1, 2, 0), (0, 1, 0), (2, 0, 0)):
         sample_counter2.count_bulk_write_result(MockResult(*result))
     assert (sample_counter2.matched, sample_counter2.modified, sample_counter2.upserted) == (3, 3, 0)
-    assert str(sample_counter2) == 'Lines: total - 1, invalid - 0. Documents: matched - 3, modified - 3.'
+    assert str(sample_counter2) == 'Lines: total - 1, invalid - 0. Requests to mongo: matched - 3, modified - 3.'
     assert str(sample_counter + sample_counter2) == \
-           'Lines: total - 2, invalid - 0. Documents: matched - 5, modified - 3, upserted - 2.'
+           'Lines: total - 2, invalid - 0. Requests to mongo: matched - 5, modified - 3, upserted - 2.'
     assert str(sample_counter & sample_counter2) == \
-           'Lines: total - 1, invalid - 0. Documents: matched - 5, modified - 3, upserted - 2.'
+           'Lines: total - 1, invalid - 0. Requests to mongo: matched - 5, modified - 3, upserted - 2.'
 
 
 def test_fileemmiter_sorter(tmpdir):
@@ -154,9 +154,9 @@ def test_counter():
             segfilecnt.line_invalid = 5
             sample_counter.count_result((filename, 1, segfilecnt, 'liveramp', str(cluster)))
     assert str(
-        sample_counter) == 'Total files: processed - 10, invalid - 10. Lines: total - 100, invalid - 50. Documents: matched - 40, upserted - 40.'
+        sample_counter) == 'Total files: processed - 10, invalid - 10. Lines: total - 100, invalid - 50. Requests to mongo: matched - 40, upserted - 40.'
     assert str(sample_counter._aggregate_counters(
-        clusters=('2', '0'))) == 'Lines: total - 100, invalid - 50. Documents: matched - 20, upserted - 20.'
+        clusters=('2', '0'))) == 'Lines: total - 100, invalid - 50. Requests to mongo: matched - 20, upserted - 20.'
     sample_counter.__init__()
     sample_counter = upload.Counter()
     for filename in ['file{}'.format(i) for i in range(5)]:
@@ -168,11 +168,13 @@ def test_counter():
             segfilecnt.line_invalid = 1
             sample_counter.count_result((filename, 0, segfilecnt, filename, str(cluster)))
     assert str(
-        sample_counter) == 'Total files: processed - 5. Lines: total - 20, invalid - 5. Documents: matched - 0, modified - 30.'
+        sample_counter) == 'Total files: processed - 5. Lines: total - 20, invalid - 5. Requests to mongo: matched - 0, modified - 30.'
     assert str(sample_counter._aggregate_counters(
-        providers=('file0', 'file4'))) == 'Lines: total - 8, invalid - 2. Documents: matched - 0, modified - 12.'
+        providers=(
+        'file0', 'file4'))) == 'Lines: total - 8, invalid - 2. Requests to mongo: matched - 0, modified - 12.'
     assert str(sample_counter._aggregate_counters(
-        ('file2', 'file1'), ('1', '2'))) == 'Lines: total - 8, invalid - 2. Documents: matched - 0, modified - 8.'
+        ('file2', 'file1'),
+        ('1', '2'))) == 'Lines: total - 8, invalid - 2. Requests to mongo: matched - 0, modified - 8.'
     sample_counter.__init__()
     for filename in ['file{}'.format(i) for i in range(5)]:
         for cluster in range(5):
@@ -191,7 +193,7 @@ def test_counter():
         sample_counter.count_result(('file1', 0, segfilecnt, 'liveramp', str(cluster)))
         sample_counter.count_result(('file10', 0, copy(segfilecnt), 'liveramp', str(cluster)))
     assert str(
-        sample_counter) == 'Total files: processed - 2, skipped - 4. Lines: total - 10, invalid - 0. Documents: matched - 20, modified - 20, upserted - 4.'
+        sample_counter) == 'Total files: processed - 2, skipped - 4. Lines: total - 10, invalid - 0. Requests to mongo: matched - 20, modified - 20, upserted - 4.'
 
 
 def test_segment_file_tsv(tmpdir):

@@ -65,8 +65,8 @@ class SegfileCounter(object):
             if not val and name != 'matched' or 'line' in name:
                 continue
             docs.append('{} - {}'.format(name, val))
-        return 'Lines: total - {}, invalid - {}. Documents: {}.'.format(self.line_total, self.line_invalid,
-                                                                        ', '.join(docs))
+        return 'Lines: total - {}, invalid - {}. Requests to mongo: {}.'.format(self.line_total, self.line_invalid,
+                                                                                ', '.join(docs))
 
     def count_bulk_write_result(self, result):
         if result.acknowledged:
@@ -321,6 +321,7 @@ class Strategy(object):
             matched = templates.REGEXP.match(item)
             if matched:
                 return {matched.group(1)}
+        return set()
 
     def get_file_type(self, path):
         rtype = mimetypes.guess_type(path)

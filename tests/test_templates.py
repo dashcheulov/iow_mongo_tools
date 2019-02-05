@@ -19,6 +19,17 @@ def test_hash_of_segments():
                                                          'ab.2452_4234': expiration_ts2}
 
 
+def test_segments_with_timestamp():
+    template1 = templates.SegmentsWithTimestamp()
+    template2 = templates.SegmentsWithTimestamp({'replacement_segment_separator': '|', 'segment_separator': ':',
+                                                 'segment_field_name': 'sg',
+                                                 'srting_pattern': '!{{timestamp}}{{timestamp_separator}}{{segments_string}}',
+                                                 'timestamp_separator': '#'})
+    ts = int(time.time())
+    assert template1.apply({'segments': '678269,678272,765488,408098'}) == '678269,678272,765488,408098:%s' % ts
+    assert template2.apply({'sg': '2341:2452_4234:234234'}) == '!%s#2341|2452_4234|234234' % ts
+
+
 def test_timestamp():
     template = templates.Timestamp()
     current_ts = int(time.time())
