@@ -5,6 +5,11 @@ import os
 from copy import copy
 
 
+def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
+    """ auxiliary comparing floats """
+    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+
+
 def test_strategy_without_defined_update():
     with pytest.raises(AttributeError) as excinfo:
         upload.Strategy({'input': {}})
@@ -171,7 +176,7 @@ def test_counter():
         sample_counter) == 'Total files: processed - 5. Lines: total - 20, invalid - 5. Requests to mongo: matched - 0, modified - 30.'
     assert str(sample_counter._aggregate_counters(
         providers=(
-        'file0', 'file4'))) == 'Lines: total - 8, invalid - 2. Requests to mongo: matched - 0, modified - 12.'
+            'file0', 'file4'))) == 'Lines: total - 8, invalid - 2. Requests to mongo: matched - 0, modified - 12.'
     assert str(sample_counter._aggregate_counters(
         ('file2', 'file1'),
         ('1', '2'))) == 'Lines: total - 8, invalid - 2. Requests to mongo: matched - 0, modified - 8.'
@@ -240,18 +245,6 @@ def test_segment_file_tsv(tmpdir):
                                        'type': ('text/tab-separated-values', None)}
 
 
-def test_timer():
-    timer = upload.Timer()
-    start_ts = time.time()
-    timer.start()
-    time.sleep(0.0000001)
-    finish_ts = time.time()
-    timer.stop()
-    assert int(timer.started_ts) == int(start_ts)
-    assert int(timer.finished_ts) == int(finish_ts)
-    assert str(timer) == 'Processing time - 0 hours 0 minutes 0 seconds.'
-
-
 def test_file_emitter(tmpdir):
     tsv_file = tmpdir.join('tsv_file.tsv')
     tsv_file.write('s')
@@ -268,3 +261,10 @@ def test_file_emitter(tmpdir):
     assert not file_emitter.errors.is_set()
     assert file_emitter.items_ready.is_set()
     assert isinstance(file_emitter.queue.get(), upload.SegmentFile)
+
+
+def test_inhibitor_get_timeout_avg_fraction():
+    assert upload.Inhibitor.get_timeout_avg_fraction([]) == 0
+    assert isclose(upload.Inhibitor.get_timeout_avg_fraction([[1, 2], [1, 4], [3, 4]]), 0.5)
+    assert isclose(upload.Inhibitor.get_timeout_avg_fraction([[2.0, 100], [1, 10.0]]), 0.06)
+    assert isclose(upload.Inhibitor.get_timeout_avg_fraction([[3, 10], [1, 0], [3, 5]]), 0.3)

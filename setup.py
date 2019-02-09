@@ -7,7 +7,7 @@ with open(path.join(here, 'README.rst')) as f:
 
 setup(
     name='iow-mongo-tools',
-    version='0.7.2',
+    version='0.7.3',
     description='Various tools for maintenance mongo cluster',
     long_description=long_description,
     url='https://confluence.iponweb.net/display/OPS/iow-mongo-tools',
@@ -24,7 +24,7 @@ setup(
     ],
     keywords='mongo iow',
     packages=find_packages(),
-    install_requires=['pymongo>=3.5.1'],
+    install_requires=['pymongo>=3.5.1', 'redis'],
     setup_requires=['pytest-runner'],
     tests_require=['pytest', 'pyaml', 'mongomock'],
     entry_points={

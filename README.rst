@@ -98,6 +98,12 @@ Here is example of maximum filled config.
       path: '/var/spool/metricsender/mongo_upload.txt'
       prefix: mongo_upload
       flush_interval: 60
+    redis:
+      host: localhost
+      port: 6379
+      db: 1
+      password: xdX6nim7nMRc6vogrrlZGNnNvoL6i4B8
+    delay_coefficient: 100
     mongo_client_settings:
       w: 0
     cluster_config: '/etc/iow-mongo-tools/cluster_config.yaml'
@@ -157,6 +163,10 @@ Here is example of maximum filled config.
 **mime_types_map**. Addition map of file extension to mime type non-standard ones.
 
 **metrics**. If presented, the scrips will write 3 metrics: `lines_processed`, `invalid`, `uploaded` [4]_ each ``flush_interval``. The script repeatedly write values, which are collected during one flash interval, to file by ``path`` in format ``<prefix>.<provider>.<cluster>.<name> <value> <unix_timestamp>``. Every flushing, all metric counters are reset.
+
+**redis**. Setting being passed to redis client which stores the most recent information about mongo timeouts. If this section is presented, separate daemon process will adjust intensity of uploading according to mongo timeouts. It simply counts delays which will be inserted after each batch of requests. The more timeouts, the longer delays.
+
+**delay_coefficient** Affects the ratio between the amount of timeouts and length of delays. Is 100 by default. The higher coefficient, the longer delays.
 
 **mongo_client_settings**. Map passed to pymongo.MongoClient() as is.
 

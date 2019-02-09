@@ -7,9 +7,10 @@ import re
 import gzip
 import time
 from collections import deque
+from functools import reduce
 from copy import copy
 import mimetypes
-from multiprocessing import Pool, Event, Array
+from multiprocessing import Pool, Event, Array, Process, Value
 from pymongo.operations import UpdateOne
 from iowmongotools import app, cluster, fs, templates
 
@@ -107,7 +108,7 @@ class SegmentFile(object):
             raise WrongFileType(self.name, self.type[0], strategy.allowed_types)
         self.invalid = False
         self.processed = False
-        self.timer = Timer()
+        self.timer = app.Timer()
         self.counter = SegfileCounter()
 
     def __gt__(self, other):
@@ -393,32 +394,6 @@ class FileEmitter(fs.EventHandler):
             raise NoAnyDelivery(self.provider)
 
 
-class Timer(object):
-    def __init__(self):
-        self.started_ts = 0
-        self.finished_ts = 0
-        self.__scheduler_ts = dict()
-
-    def start(self):
-        self.started_ts = time.time()
-
-    def stop(self):
-        self.finished_ts = time.time()
-
-    def execute(self, func, args, interval):
-        signature = func.__name__, args
-        ts = time.time()
-        if ts >= self.__scheduler_ts.get(signature, 0) + interval:
-            self.__scheduler_ts[signature] = ts
-            return func(*args)
-
-    def __str__(self):
-        if self.finished_ts > self.started_ts:
-            return time.strftime("Processing time - %-H hours %-M minutes %-S seconds.",
-                                 time.gmtime(self.finished_ts - self.started_ts))
-        return ''
-
-
 class Counter(object):
 
     def __init__(self):
@@ -504,6 +479,37 @@ class Counter(object):
         return 'Total files: {}. {}'.format(', '.join(out), self._aggregate_counters())
 
 
+class Inhibitor(Process):
+
+    def __init__(self, redis_conf, delays, delay_coefficient):
+        super().__init__()
+        self.daemon = True
+        import redis
+        self._api = redis.Redis(**redis_conf, decode_responses=True)
+        self.delays = delays
+        self.delay_coefficient = delay_coefficient or 100
+        # Automatically starting
+        self.start()
+
+    def run(self):
+        pipe = self._api.pipeline()
+        while True:
+            for name, val in self.delays.items():
+                time.sleep(5)
+                for key in [x for x in self._api.scan_iter(match='*:{}'.format(name))]:
+                    pipe.hmget(key, 'failed_requests.timeout', 'find_queries')
+                data = pipe.execute()  # e.g. [['0.0', '45078.0'], ['0.0', '45598.0']]
+                try:
+                    val.value = self.get_timeout_avg_fraction(data) * self.delay_coefficient
+                except TypeError as err:
+                    logger.error('%s. Wrong data from redis: %s', err, data)
+
+    @staticmethod
+    def get_timeout_avg_fraction(data):
+        return reduce(lambda a, b: a + float(b[0]) / float(b[1]) if float(b[1]) > 0 else a, data, 0) / len(
+            data) if data else 0
+
+
 class Uploader(app.App):
     shared_array = Array('i', 1000)
     shared_metrics = dict()
@@ -543,7 +549,7 @@ class Uploader(app.App):
         return config
 
     def run(self):
-        timer = Timer()
+        timer = app.Timer()
         timer.start()
         if not hasattr(self.config, 'clusters'):
             logger.error('Please provide cluster_config.yaml. See --help.')
@@ -580,6 +586,12 @@ class Uploader(app.App):
                                                                                           'mongo_client_settings'):
                 self.config.cluster_config[key]['mongo_client_settings'] = self.config.mongo_client_settings
         errors = len(self.config.clusters) - cluster.create_objects(self.config.clusters, self.config.cluster_config)
+        if hasattr(self.config, 'redis'):
+            delays = dict()
+            for cl in cluster.Cluster.objects.values():
+                cl.uploading_delay = Value('d', 0.0)
+                delays.update({cl.name: cl.uploading_delay})
+            Inhibitor(self.config.redis, delays, getattr(self.config, 'delay_coefficient', None))
         for provider in self.config.providers:  # init buffer
             self.buffer[provider] = dict()
         for provider in self.config.providers:  # files of one provider can't be uploaded to a cluster simultaneously

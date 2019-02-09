@@ -1,6 +1,7 @@
 """ Manages mongo cluster """
 from iowmongotools import app
 import logging
+from time import sleep
 from multiprocessing.pool import ThreadPool
 import pymongo
 import yaml
@@ -63,6 +64,7 @@ class Cluster(object):
         self._api = pymongo.MongoClient(['mongodb://%s' % mongos for mongos in cluster_config['mongos']], connect=False,
                                         **mongo_client_settings)
         self.name = name
+        self.uploading_delay = None
 
     def generate_commands(self, pre_remove_dbs=(), force=False):
         """ :returns dict of lists of commands """
@@ -171,5 +173,19 @@ class Cluster(object):
         wc = obj.strategy.write_concern or dict()
         collection = self._api[obj.strategy.database].get_collection(obj.strategy.collection,
                                                                      write_concern=pymongo.WriteConcern(**wc))
+        timer = app.Timer()
+        mutable_var = [self.name, 0.0]
         for batch in obj.get_batch():
+            if self.uploading_delay:
+                if self.uploading_delay.value > 0:
+                    mutable_var[1] += self.uploading_delay.value
+                    sleep(self.uploading_delay.value)
+                    timer.execute(self.flush_delay_to_log, (mutable_var,), 60)
             obj.shared_metrics[2] += obj.counter.count_bulk_write_result(collection.bulk_write(batch, ordered=False))
+
+    @staticmethod
+    def flush_delay_to_log(mutable_var):
+        logger.warning(
+            'At \'%s\' due to mongo timeouts uploading has been suspended for %s seconds in the last minute.',
+            mutable_var[0], round(mutable_var[1], 3))
+        mutable_var[1] = 0.0

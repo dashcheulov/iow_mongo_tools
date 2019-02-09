@@ -3,8 +3,8 @@ import sys
 import os
 import logging
 import logging.config
+import time
 from abc import ABC, abstractmethod
-from time import sleep
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import subprocess
 import yaml
@@ -298,7 +298,7 @@ class Invoker(object):
                     break
                 if i + 1 < command.retries:
                     logging.warning('Command failed with response \'%s\'. Retrying in %s s.', result, command.sleep_time)
-                    sleep(command.sleep_time)
+                    time.sleep(command.sleep_time)
                 else:
                     logging.warning('Command failed with response \'%s\'.', result)
             if not ok:
@@ -310,6 +310,32 @@ class Invoker(object):
     def print(self):
         for command in self.registry:
             logger.info('Would do %s', command)
+
+
+class Timer(object):
+    def __init__(self):
+        self.started_ts = 0
+        self.finished_ts = 0
+        self.__scheduler_ts = dict()
+
+    def start(self):
+        self.started_ts = time.time()
+
+    def stop(self):
+        self.finished_ts = time.time()
+
+    def execute(self, func, args, interval):
+        signature = func.__name__
+        ts = time.time()
+        if ts >= self.__scheduler_ts.get(signature, 0) + interval:
+            self.__scheduler_ts[signature] = ts
+            return func(*args)
+
+    def __str__(self):
+        if self.finished_ts > self.started_ts:
+            return time.strftime("Processing time - %-H hours %-M minutes %-S seconds.",
+                                 time.gmtime(self.finished_ts - self.started_ts))
+        return ''
 
 
 class App(ABC):

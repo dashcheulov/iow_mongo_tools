@@ -1,4 +1,5 @@
 from iowmongotools import app
+import time
 import pytest
 
 
@@ -218,3 +219,15 @@ def test_class_invoker():
     with pytest.raises(TypeError) as excinfo:
         invoker.add(sample_dict)
     assert str(excinfo.value) == 'Instances of \'Command\' class are allowed only'
+
+
+def test_timer():
+    timer = app.Timer()
+    start_ts = time.time()
+    timer.start()
+    time.sleep(0.0000001)
+    finish_ts = time.time()
+    timer.stop()
+    assert int(timer.started_ts) == int(start_ts)
+    assert int(timer.finished_ts) == int(finish_ts)
+    assert str(timer) == 'Processing time - 0 hours 0 minutes 0 seconds.'
