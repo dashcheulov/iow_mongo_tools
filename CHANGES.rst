@@ -1,6 +1,10 @@
 Changelog
 =========
 
+0.7.4 (2019-02-10)
+-------------------
+- added ability to restrict list of clusters per provider.
+
 0.7.3 (2019-02-10)
 -------------------
 - added dynamic load intensity adjustment. There are two new sections in config: 'redis' and 'delay_coefficient'.

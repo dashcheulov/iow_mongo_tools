@@ -121,6 +121,8 @@ Here is example of maximum filled config.
         threshold_percent_invalid_lines_in_batch: 80
         process_invalid_file_to_end: true
         log_invalid_lines: true
+        clusters:
+          - gce-be
         delivery:
           local:
             path: /storage/liveramp
@@ -193,6 +195,8 @@ Here is example of maximum filled config.
     **process_invalid_file_to_end**. By default, file will be processed to the end unconditionally. If this is set to `false`, processing of file will be stopped after it bacame 'invalid'. See the parameter above.
 
     **log_invalid_lines**. By default each line being not passed validation is logged as warning. Set the parameter to `false` in order to switch off logging of such lines.
+
+    **clusters**. You may restrict list of clusters for particular provider.
 
     **delivery**. This section describes where to get files with segments. May include sub-section 'local', 's3', 'sftp', 'gs' are going to be added. May have several deliveries. E.g. if 'local' and 's3' are declared, files from both sources will be discovered and processed in order described in section `sorting`.
 

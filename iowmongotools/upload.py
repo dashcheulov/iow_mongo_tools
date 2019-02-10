@@ -278,6 +278,8 @@ class Strategy(object):
         self.upsert = config.get('upsert', False)
         self.__file_type_override = config.get('file_type_override', None)
         self.log_invalid_lines = config.get('log_invalid_lines', True)
+        self.clusters = [cl for cl in config.get('clusters', []) if
+                         cl in cluster.Cluster.objects.keys()] or list(cluster.Cluster.objects.keys())
         self.threshold_percent_invalid_lines_in_batch = config.get('threshold_percent_invalid_lines_in_batch', 80)
         self.override_filename_from_path = config.get('override_filename_from_path')
         if isinstance(self.override_filename_from_path, dict):
@@ -669,7 +671,7 @@ class Uploader(app.App):
                     Uploader.shared_array[0] += 1
                 Uploader.shared_array[Uploader.shared_array[0]] = 0  # init element
                 segment_file.shared_index = Uploader.shared_array[0]  # pass index to segment_file
-                for cl_name in cluster.Cluster.objects.keys():
+                for cl_name in segment_file.strategy.clusters:
                     self.buffer[segment_file.provider][cl_name][1].append(segment_file)
         for provider in self.config.providers:  # check buffer
             for cl in cluster.Cluster.objects.keys():
