@@ -487,7 +487,8 @@ class Inhibitor(Process):
         super().__init__()
         self.daemon = True
         import redis
-        self._api = redis.Redis(**redis_conf, decode_responses=True)
+        redis_conf['decode_responses'] = True
+        self._api = redis.Redis(**redis_conf)
         self.delays = delays
         self.delay_coefficient = delay_coefficient or 100
         # Automatically starting

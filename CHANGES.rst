@@ -1,6 +1,10 @@
 Changelog
 =========
 
+0.7.6 (2019-02-13)
+-------------------
+- fixed compatibility of uploader.Inhibitor with python 3.4.
+
 0.7.5 (2019-02-11)
 -------------------
 - added name of provider to log message in case of mongo timeouts.
