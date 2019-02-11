@@ -1,6 +1,10 @@
 Changelog
 =========
 
+0.7.5 (2019-02-11)
+-------------------
+- added name of provider to log message in case of mongo timeouts.
+
 0.7.4 (2019-02-10)
 -------------------
 - added ability to restrict list of clusters per provider.
